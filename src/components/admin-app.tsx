@@ -24,6 +24,7 @@ import {
   Pencil,
   ImageIcon,
   ExternalLink,
+  Copy,
   Save,
 } from 'lucide-react'
 import { Button } from '@/components/ui/button'
@@ -1085,6 +1086,8 @@ function MaterialEditDialog({ material, onClose, onSaved }: { material: Material
 // ============================================================
 type Donation = {
   id: string
+  wantPackMedia: boolean
+  paymentMethod: string | null
   currency: string
   amount: number | null
   donorName: string | null
@@ -1106,6 +1109,17 @@ function DonationsTab() {
       reload()
     } catch (e) {
       toast.error(e instanceof Error ? e.message : 'Não foi possível atualizar.')
+    }
+  }
+  const copyPack = async (d: Donation) => {
+    try {
+      const data = await apiFetch<{ url: string }>(`/api/admin/donations/${d.id}/pack`)
+      await navigator.clipboard.writeText(data.url)
+      toast.success('Ligação privada do Pack Media copiada', {
+        description: 'Envie apenas ao próprio doador, por um canal seguro.',
+      })
+    } catch (e) {
+      toast.error(e instanceof Error ? e.message : 'Não foi possível obter o Pack Media.')
     }
   }
   const sendThanks = async (d: Donation) => {
@@ -1145,8 +1159,24 @@ function DonationsTab() {
                     <div className="mt-1 text-xs text-muted-foreground">{new Date(d.createdAt).toLocaleString('pt')}</div>
                   </div>
                   <div className="flex flex-wrap justify-end gap-1">
-                    <Button size="sm" variant="outline" onClick={() => patch(d, { confirmed: true, status: 'confirmed' })}>Confirmar</Button>
-                    <Button size="sm" variant="outline" onClick={() => patch(d, { confirmed: false, status: 'rejected' })}>Rejeitar</Button>
+                    {(d.paymentMethod === 'bank_transfer' || !d.paymentMethod) && !d.confirmed && (
+                      <Button size="sm" variant="outline"
+                        onClick={() => patch(d, { confirmed: true, status: 'confirmed' })}>
+                        Confirmar
+                      </Button>
+                    )}
+                    {d.wantPackMedia && d.confirmed && (
+                      <Button size="sm" variant="outline" onClick={() => copyPack(d)}
+                        title="Copiar link privado do Pack Media">
+                        <Copy className="mr-1 h-3.5 w-3.5" /> Pack Media
+                      </Button>
+                    )}
+                    {!d.confirmed && (
+                      <Button size="sm" variant="outline"
+                        onClick={() => patch(d, { confirmed: false, status: 'rejected' })}>
+                        Rejeitar
+                      </Button>
+                    )}
                     <Button size="sm" variant="ghost" onClick={() => sendThanks(d)} title="Enviar agradecimento (requer consentimento)">Agradecer</Button>
                   </div>
                 </li>
