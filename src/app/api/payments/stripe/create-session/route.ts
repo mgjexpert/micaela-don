@@ -86,14 +86,15 @@ export async function POST(req: NextRequest) {
 
   // 4) Create Stripe Checkout Session (embedded mode)
   try {
-    const origin = req.headers.get('origin') ?? 'https://ajudar.charity'
+    // Canonical server-configured origin, not the request's Origin header.
+    const baseUrl = (process.env.APP_BASE_URL ?? 'https://ajudar.charity').replace(/\/$/, '')
     const { sessionId, clientSecret } = await createCheckoutSession({
       internalReference,
       amount: d.amount,
       currency: d.currency,
       campaignName: campaign.name,
       customerEmail: d.customerEmail,
-      returnUrl: `${origin}/pagamento/sucesso?ref=${internalReference}`,
+      returnUrl: `${baseUrl}/pagamento/sucesso?ref=${encodeURIComponent(internalReference)}`,
       metadata: {
         campaign_id: campaign.id,
         order_id: order.id,

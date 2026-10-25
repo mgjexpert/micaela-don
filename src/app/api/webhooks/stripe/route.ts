@@ -121,6 +121,7 @@ async function processStripeEvent(event: { type: string; data: { object: Record<
   }
 
   switch (event.type) {
+    case 'checkout.session.async_payment_succeeded':
     case 'checkout.session.completed': {
       // Checkout completed ≠ paid. Check payment_status.
       const paymentStatus = obj.payment_status as string
@@ -171,6 +172,7 @@ async function processStripeEvent(event: { type: string; data: { object: Record<
       }
       break
     }
+    case 'checkout.session.async_payment_failed':
     case 'payment_intent.payment_failed': {
       await db.paymentOrder.update({
         where: { id: order.id },

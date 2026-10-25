@@ -702,8 +702,9 @@ function Step4PackMedia({
       <StepHeader n={4} title="Pack Media de agradecimento" desc="Receba os materiais digitais de agradecimento da campanha." />
       <label className="flex cursor-pointer items-start gap-3 rounded-xl border-2 p-4 transition-all hover:border-rose-400 hover:bg-rose-50/50 dark:hover:bg-rose-950/10">
         <Checkbox
-          checked={wantPackMedia}
-          onCheckedChange={(v) => setWantPackMedia(v === true)}
+          checked={wantPackMedia && hasMaterials}
+          disabled={!hasMaterials}
+          onCheckedChange={(v) => setWantPackMedia(hasMaterials && v === true)}
           className="mt-0.5"
         />
         <div className="flex-1">
@@ -717,7 +718,7 @@ function Step4PackMedia({
           </p>
           {!hasMaterials && (
             <p className="mt-2 text-xs text-amber-700 dark:text-amber-400">
-              Esta campanha ainda não tem materiais digitais publicados. Se selecionar esta opção, será notificado quando estiverem disponíveis.
+              O Pack Media será disponibilizado após publicação dos materiais e validação da entrega digital.
             </p>
           )}
           <p className="mt-2 text-xs text-muted-foreground">

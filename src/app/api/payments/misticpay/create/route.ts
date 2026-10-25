@@ -90,8 +90,9 @@ export async function POST(req: NextRequest) {
 
   // Call MisticPay API
   try {
-    const origin = req.headers.get('origin') ?? 'https://ajudar.charity'
-    const webhookUrl = `${origin}/api/webhooks/misticpay`
+    // Never derive a payment webhook destination from a visitor-controlled Origin header.
+    const baseUrl = (process.env.APP_BASE_URL ?? 'https://ajudar.charity').replace(/\/$/, '')
+    const webhookUrl = `${baseUrl}/api/webhooks/misticpay`
 
     const misticpayResponse = await createMisticPayPayment({
       amount: d.amount,

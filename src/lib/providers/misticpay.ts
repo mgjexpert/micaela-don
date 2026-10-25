@@ -1,24 +1,9 @@
 /**
- * MisticPay adapter — server-only.
- *
+ * Server-only MisticPay adapter. Webhooks are untrusted notifications:
+ * payment authorization requires a verified /transactions/check response.
  * Docs: https://docs.misticpay.com/
- * Base URL: https://api.misticpay.com/api
- * Auth: Authorization: Basic BASE64(pk_:sk_) or BASE64(client_id:client_secret)
- *
- * Create charge: POST /transactions/create
- *   Body: { amount, payerName, payerDocument, description, transactionId, projectWebhook }
- *   Returns: { transactionId, qrCode/pixQrCode, copyPaste/pixCopyPaste, status, ... }
- *
- * Check status: POST /transactions/check
- *   Body: { transactionId }
- *
- * Webhook: sent to projectWebhook URL when payment status changes.
- *
- * Credentials (MISTICPAY_CLIENT_ID, MISTICPAY_CLIENT_SECRET) are server-only env vars.
- * Supports both pk_/sk_ (new) and ci_/cs_ (legacy) formats.
  */
-
-const MISTICPAY_BASE_URL = 'https://api.misticpay.com/api'
+const API_BASE = 'https://api.misticpay.com/api'
 
 export type CreateMisticPayPaymentParams = {
   amount: number
@@ -28,115 +13,136 @@ export type CreateMisticPayPaymentParams = {
   transactionId: string
   webhookUrl: string
 }
-
 export type MisticPayPaymentResponse = {
   transactionId?: string
-  pixQrCode?: string | null
-  pixCopyPaste?: string | null
+  pixQrCode: string | null
+  pixCopyPaste: string | null
   status?: string
   amount?: number
-  [key: string]: unknown
 }
-
 export type MisticPayStatusResponse = {
   transactionId?: string
+  clientTransactionId?: string
   status?: string
   amount?: number
-  [key: string]: unknown
+  transactionType?: string
+  transactionMethod?: string
 }
-
-function getAuthHeader(): string {
-  const clientId = process.env.MISTICPAY_CLIENT_ID
-  const clientSecret = process.env.MISTICPAY_CLIENT_SECRET
-  if (!clientId || !clientSecret) {
-    throw new Error('MisticPay: credenciais não configuradas')
-  }
-  const basic = Buffer.from(`${clientId}:${clientSecret}`).toString('base64')
-  return `Basic ${basic}`
+type ObjectValue = Record<string, unknown>
+function record(value: unknown): ObjectValue | null {
+  return value !== null && typeof value === 'object' && !Array.isArray(value)
+    ? value as ObjectValue : null
 }
-
-function isConfigured(): boolean {
-  return !!(process.env.MISTICPAY_CLIENT_ID && process.env.MISTICPAY_CLIENT_SECRET)
+function identifier(value: unknown): string | undefined {
+  if (typeof value === 'string' && value.trim()) return value.trim()
+  if (typeof value === 'number' && Number.isFinite(value)) return String(value)
+  return undefined
 }
-
-/**
- * Safely extracts a string field from a response, trying multiple key names.
- */
-function extractString(data: Record<string, unknown>, keys: string[]): string | null {
-  for (const key of keys) {
-    const val = data[key]
-    if (typeof val === 'string' && val.length > 0) return val
+function stringField(obj: ObjectValue, fields: string[]): string | null {
+  for (const field of fields) {
+    const value = obj[field]
+    if (typeof value === 'string' && value.trim()) return value.trim()
   }
   return null
 }
+function numberField(obj: ObjectValue, fields: string[]): number | undefined {
+  for (const field of fields) {
+    const value = obj[field]
+    if (typeof value === 'number' && Number.isFinite(value)) return value
+    if (typeof value === 'string' && value.trim() && Number.isFinite(Number(value))) return Number(value)
+  }
+  return undefined
+}
+function authHeader(): string {
+  const id = process.env.MISTICPAY_CLIENT_ID
+  const secret = process.env.MISTICPAY_CLIENT_SECRET
+  if (!id || !secret) throw new Error('MisticPay credentials are not configured')
+  return `Basic ${Buffer.from(`${id}:${secret}`).toString('base64')}`
+}
+async function post(path: string, payload: ObjectValue): Promise<unknown> {
+  const response = await fetch(`${API_BASE}${path}`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', Authorization: authHeader() },
+    body: JSON.stringify(payload),
+    cache: 'no-store',
+    signal: AbortSignal.timeout(10000),
+  })
+  if (!response.ok) throw new Error(`MisticPay API request failed HTTP ${response.status}`)
+  return response.json()
+}
 
-export async function createMisticPayPayment(
-  params: CreateMisticPayPaymentParams,
-): Promise<MisticPayPaymentResponse> {
-  const auth = getAuthHeader()
-  const body = {
+/** The create endpoint responds with {message, data:{...}}. */
+export function normalizeMisticPayCreate(raw: unknown): MisticPayPaymentResponse {
+  const outer = record(raw) ?? {}
+  const data = record(outer.data) ?? outer
+  const qr = stringField(data, ['qrCodeBase64', 'pixQrCode', 'qrCode', 'qr_code', 'qrcode'])
+  return {
+    transactionId: identifier(data.transactionId) ?? identifier(data.id) ?? identifier(data.transaction_id),
+    pixQrCode: qr && !qr.startsWith('data:') && !qr.startsWith('https://')
+      ? `data:image/png;base64,${qr}` : qr,
+    pixCopyPaste: stringField(data, ['copyPaste', 'pixCopyPaste', 'copy_paste', 'pixCode', 'brCode', 'payload']),
+    status: stringField(data, ['transactionState', 'status', 'state']) ?? undefined,
+    amount: numberField(data, ['transactionAmount', 'value', 'amount']),
+  }
+}
+
+/** The status endpoint responds with {message, transaction:{...}}. */
+export function normalizeMisticPayStatus(raw: unknown): MisticPayStatusResponse {
+  const outer = record(raw) ?? {}
+  const data = record(outer.transaction) ?? record(outer.data) ?? outer
+  return {
+    transactionId: identifier(data.transactionId),
+    clientTransactionId: identifier(data.clientTransactionId),
+    status: stringField(data, ['transactionState', 'status', 'state']) ?? undefined,
+    amount: numberField(data, ['value', 'transactionAmount', 'amount']),
+    transactionType: stringField(data, ['transactionType']) ?? undefined,
+    transactionMethod: stringField(data, ['transactionMethod']) ?? undefined,
+  }
+}
+
+export type MisticPayState =
+  | 'PENDENTE' | 'COMPLETO' | 'FALHA' | 'CANCELADO' | 'DEVOLVIDO' | 'DEVOLVIDO_PARCIAL'
+
+/**
+ * Pure reconciliation, so a spoofed webhook can never authorize payment.
+ * Requires provider identity, PIX deposit, exact cent amount and known state.
+ */
+export function reconcileMisticPay(
+  verified: MisticPayStatusResponse,
+  expected: { internalReference: string; externalId: string | null; currency: string; amount: number },
+): { ok: true; state: MisticPayState } | { ok: false; reason: string } {
+  const known = [expected.internalReference, expected.externalId].filter((id): id is string => !!id)
+  const received = [verified.transactionId, verified.clientTransactionId].filter((id): id is string => !!id)
+  if (!received.length || !received.some(id => known.includes(id))) {
+    return { ok: false, reason: 'transaction_identity_mismatch' }
+  }
+  if (verified.transactionType?.toUpperCase() !== 'DEPOSITO'
+    || verified.transactionMethod?.toUpperCase() !== 'PIX') {
+    return { ok: false, reason: 'payment_type_mismatch' }
+  }
+  if (expected.currency !== 'BRL' || verified.amount === undefined
+    || !Number.isFinite(verified.amount)
+    || Math.round(verified.amount * 100) !== Math.round(expected.amount * 100)) {
+    return { ok: false, reason: 'amount_mismatch' }
+  }
+  const state = verified.status?.toUpperCase()
+  if (!state || !(['PENDENTE', 'COMPLETO', 'FALHA', 'CANCELADO', 'DEVOLVIDO', 'DEVOLVIDO_PARCIAL'] as string[]).includes(state)) {
+    return { ok: false, reason: 'unknown_provider_state' }
+  }
+  return { ok: true, state: state as MisticPayState }
+}
+
+export async function createMisticPayPayment(params: CreateMisticPayPaymentParams): Promise<MisticPayPaymentResponse> {
+  return normalizeMisticPayCreate(await post('/transactions/create', {
     amount: params.amount,
     payerName: params.payerName,
     payerDocument: params.payerDocument,
     description: params.description,
     transactionId: params.transactionId,
     projectWebhook: params.webhookUrl,
-  }
-
-  const res = await fetch(`${MISTICPAY_BASE_URL}/transactions/create`, {
-    method: 'POST',
-    headers: {
-      'Content-Type': 'application/json',
-      'Authorization': auth,
-    },
-    body: JSON.stringify(body),
-  })
-
-  if (!res.ok) {
-    const errorData = await res.json().catch(() => null)
-    const code = errorData?.code ?? 'UNKNOWN'
-    const message = errorData?.message ?? `MisticPay API error ${res.status}`
-    throw new Error(`MisticPay ${code}: ${message}`)
-  }
-
-  const raw = await res.json() as Record<string, unknown>
-
-  // MisticPay returns { message, data: { transactionId, qrCodeBase64, copyPaste, ... } }
-  // The actual payment data is inside the "data" property
-  const data = (raw.data && typeof raw.data === 'object' ? raw.data : raw) as Record<string, unknown>
-
-  // Extract fields with the exact names MisticPay uses
-  const transactionId = extractString(data, ['transactionId', 'id', 'transaction_id', 'txid'])
-  const pixQrCode = extractString(data, ['qrCodeBase64', 'pixQrCode', 'qrCode', 'qr_code', 'qrcode'])
-  const pixCopyPaste = extractString(data, ['copyPaste', 'pixCopyPaste', 'copy_paste', 'pixCode', 'brCode', 'payload'])
-  const status = extractString(data, ['transactionState', 'status', 'state'])
-
-  return {
-    ...data,
-    transactionId: transactionId ?? undefined,
-    pixQrCode: pixQrCode,
-    pixCopyPaste: pixCopyPaste,
-    status: status ?? undefined,
-    amount: typeof data.transactionAmount === 'number' ? data.transactionAmount : (typeof data.amount === 'number' ? data.amount : undefined),
-  }
+  }))
 }
-
-export async function getMisticPayPaymentStatus(
-  transactionId: string,
-): Promise<MisticPayStatusResponse> {
-  const auth = getAuthHeader()
-  const res = await fetch(`${MISTICPAY_BASE_URL}/transactions/check`, {
-    method: 'POST',
-    headers: {
-      'Content-Type': 'application/json',
-      'Authorization': auth,
-    },
-    body: JSON.stringify({ transactionId }),
-  })
-  if (!res.ok) {
-    throw new Error(`MisticPay API error ${res.status}`)
-  }
-  return (await res.json()) as MisticPayStatusResponse
+export async function getMisticPayPaymentStatus(transactionId: string): Promise<MisticPayStatusResponse> {
+  return normalizeMisticPayStatus(await post('/transactions/check', { transactionId }))
 }
-
-export { isConfigured as isMisticPayConfigured }
+export const isMisticPayConfigured = () => Boolean(process.env.MISTICPAY_CLIENT_ID && process.env.MISTICPAY_CLIENT_SECRET)
