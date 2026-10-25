@@ -43,6 +43,7 @@ export async function POST(req: NextRequest) {
     return badRequest(parsed.error.issues[0]?.message ?? 'Dados inválidos.')
   }
   const d = parsed.data
+  if (!process.env.MISTICPAY_CLIENT_ID || !process.env.MISTICPAY_CLIENT_SECRET) return badRequest('PIX automático indisponível.')
   const ip = clientIp(req)
 
   // CPF/CNPJ validation: 11 or 14 digits

@@ -60,6 +60,7 @@ export async function POST(req: NextRequest) {
     return badRequest(parsed.error.issues[0]?.message ?? 'Dados inválidos.')
   }
   const d = parsed.data
+  if (!process.env.PIXGO_API_KEY || !process.env.PIXGO_WEBHOOK_SECRET) return badRequest('PixGo indisponível.')
   const ip = clientIp(req)
 
   // Validate CPF/CNPJ format

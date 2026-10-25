@@ -6,6 +6,7 @@ import { clientIp } from '@/lib/auth'
 import { audit } from '@/lib/audit'
 import { sendTelegramAlert, isTelegramConfigured } from '@/lib/notifications/telegram'
 import { resolveDonationIntentId } from '@/lib/payments/intent'
+import { getCanonicalAppBaseUrl } from '@/lib/payments/urls'
 import {
   generateInternalReference,
   validateAmount,
@@ -59,6 +60,13 @@ export async function POST(req: NextRequest) {
     return badRequest('Campanha não disponível.')
   }
 
+  // Do not advertise or accept a manual charge without a verified beneficiary QR.
+  const manualPix = await db.pixConfig.findFirst({
+    where: { campaignId: campaign.id, approved: true, published: true,
+      qrImageData: { not: null } }, select: { id: true },
+  })
+  if (!manualPix) return badRequest('PIX manual indisponível nesta campanha.')
+
   // 2) Validate amount (BRL 1–50000)
   let amountStr: string
   try {
@@ -111,7 +119,7 @@ export async function POST(req: NextRequest) {
   })
 
   // 4) Send Telegram alert (private, no personal data)
-  const baseUrl = (process.env.APP_BASE_URL ?? 'https://ajudar.charity').replace(/\/$/, '')
+  const baseUrl = getCanonicalAppBaseUrl()
   const adminLink = `${baseUrl}/#admin` // the admin panel opens via the footer button
   const telegramResult = await sendTelegramAlert({
     orderId: order.id,

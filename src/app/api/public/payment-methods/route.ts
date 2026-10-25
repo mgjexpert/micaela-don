@@ -1,6 +1,7 @@
 import { NextRequest } from 'next/server'
 import { db } from '@/lib/db'
 import { json } from '@/lib/api'
+import { getCanonicalAppBaseUrl } from '@/lib/payments/urls'
 
 /**
  * Returns which payment methods are available.
@@ -12,9 +13,15 @@ export async function GET(req: NextRequest) {
   const { searchParams } = new URL(req.url)
   const campaignId = searchParams.get('campaignId') ?? 'micaela'
 
-  const stripeConfigured = !!process.env.STRIPE_SECRET_KEY
-  const pixgoConfigured = !!process.env.PIXGO_API_KEY && process.env.ENABLE_PIXGO === 'true'
-  const misticpayConfigured = !!(process.env.MISTICPAY_CLIENT_ID && process.env.MISTICPAY_CLIENT_SECRET)
+  let canonicalConfigured = false
+  try { canonicalConfigured = !!getCanonicalAppBaseUrl() } catch { /* no automatic checkout */ }
+  const stripeConfigured = canonicalConfigured
+    && !!process.env.STRIPE_SECRET_KEY && !!process.env.STRIPE_WEBHOOK_SECRET
+    && !!process.env.NEXT_PUBLIC_STRIPE_PUBLISHABLE_KEY
+  const pixgoConfigured = canonicalConfigured && !!process.env.PIXGO_API_KEY
+    && !!process.env.PIXGO_WEBHOOK_SECRET && process.env.ENABLE_PIXGO === 'true'
+  const misticpayConfigured = canonicalConfigured
+    && !!process.env.MISTICPAY_CLIENT_ID && !!process.env.MISTICPAY_CLIENT_SECRET
 
   let pixManualAvailable = false
   let bankTransferAvailable = false
@@ -28,9 +35,9 @@ export async function GET(req: NextRequest) {
     const pix = await db.pixConfig.findFirst({
       where: { campaignId },
       orderBy: { updatedAt: 'desc' },
-    }) as { approved?: boolean; published?: boolean; beneficiaryName?: string } | null
+    }) as { approved?: boolean; published?: boolean; beneficiaryName?: string; qrImageData?: string | null; qrImageMime?: string | null } | null
 
-    if (pix && pix.approved && pix.published) {
+    if (pix && pix.approved && pix.published && pix.qrImageData && ['image/png', 'image/jpeg', 'image/webp'].includes(pix.qrImageMime ?? '')) {
       pixManualAvailable = true
       pixBeneficiaryName = pix.beneficiaryName ?? null
     }
@@ -44,7 +51,7 @@ export async function GET(req: NextRequest) {
       orderBy: { updatedAt: 'desc' },
     }) as { approved?: boolean; published?: boolean; holder?: string; iban?: string; bank?: string; bic?: string | null } | null
 
-    if (payment && payment.approved && payment.published) {
+    if (payment && payment.approved && payment.published && payment.holder && payment.iban && payment.bank) {
       bankTransferAvailable = true
       bankHolder = payment.holder ?? null
       bankIban = payment.iban ?? null

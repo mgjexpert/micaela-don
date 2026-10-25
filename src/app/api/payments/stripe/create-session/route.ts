@@ -45,6 +45,7 @@ export async function POST(req: NextRequest) {
     return badRequest(parsed.error.issues[0]?.message ?? 'Dados inválidos.')
   }
   const d = parsed.data
+  if (!process.env.STRIPE_SECRET_KEY || !process.env.STRIPE_WEBHOOK_SECRET || !process.env.NEXT_PUBLIC_STRIPE_PUBLISHABLE_KEY) return badRequest('Pagamento em euros indisponível.')
   const ip = clientIp(req)
 
   // 1) Validate campaign
