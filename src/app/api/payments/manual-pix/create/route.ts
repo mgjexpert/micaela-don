@@ -5,6 +5,7 @@ import { json, badRequest } from '@/lib/api'
 import { clientIp } from '@/lib/auth'
 import { audit } from '@/lib/audit'
 import { sendTelegramAlert, isTelegramConfigured } from '@/lib/notifications/telegram'
+import { resolveDonationIntentId } from '@/lib/payments/intent'
 import {
   generateInternalReference,
   validateAmount,
@@ -13,6 +14,7 @@ import {
 const schema = z.object({
   campaignId: z.string().trim().max(60).default('micaela'),
   amount: z.number().positive(),
+  donationIntentId: z.string().trim().min(8).max(128).optional(),
   currency: z.enum(['BRL']).default('BRL'),
   customerName: z.string().trim().max(120).optional(),
   customerEmail: z.string().trim().email().max(160).optional(),
@@ -65,11 +67,22 @@ export async function POST(req: NextRequest) {
     return badRequest(e instanceof Error ? e.message : 'Valor inválido.')
   }
 
+  let donationIntentId: string | null
+  try {
+    donationIntentId = await resolveDonationIntentId(d.donationIntentId, {
+      campaignId: campaign.id, currency: d.currency, amount: amountStr,
+      paymentMethod: 'pix_manual', customerEmail: d.customerEmail,
+    })
+  } catch (e) {
+    return badRequest(e instanceof Error ? e.message : 'Intenção inválida.')
+  }
+
   // 3) Create PaymentOrder (manual_pix, pending)
   const internalReference = generateInternalReference()
   const order = await db.paymentOrder.create({
     data: {
       campaignId: campaign.id,
+      donationIntentId,
       provider: 'manual_pix',
       method: 'pix_manual',
       internalReference,
@@ -98,8 +111,8 @@ export async function POST(req: NextRequest) {
   })
 
   // 4) Send Telegram alert (private, no personal data)
-  const origin = req.headers.get('origin') ?? 'https://ajudar.charity'
-  const adminLink = `${origin}/#admin` // the admin panel opens via the footer button
+  const baseUrl = (process.env.APP_BASE_URL ?? 'https://ajudar.charity').replace(/\/$/, '')
+  const adminLink = `${baseUrl}/#admin` // the admin panel opens via the footer button
   const telegramResult = await sendTelegramAlert({
     orderId: order.id,
     campaignName: campaign.name,

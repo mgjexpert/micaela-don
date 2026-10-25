@@ -64,6 +64,10 @@ export function validateAmount(amount: number, min: number, max: number): string
   if (amount > max) {
     throw new Error(`O valor máximo é ${max.toFixed(2)}.`)
   }
-  // Round to 2 decimals to avoid floating-point artifacts
-  return (Math.round(amount * 100) / 100).toFixed(2)
+  // Providers and persisted orders must always agree on exact cents.
+  const cents = Math.round(amount * 100)
+  if (!Number.isSafeInteger(cents) || Math.abs(amount * 100 - cents) > 0.000001) {
+    throw new Error('Use um valor com no máximo duas casas decimais.')
+  }
+  return (cents / 100).toFixed(2)
 }

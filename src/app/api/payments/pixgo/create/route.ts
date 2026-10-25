@@ -5,6 +5,7 @@ import { json, badRequest } from '@/lib/api'
 import { clientIp } from '@/lib/auth'
 import { audit } from '@/lib/audit'
 import { createPixGoPayment } from '@/lib/providers/pixgo'
+import { resolveDonationIntentId } from '@/lib/payments/intent'
 import {
   generateInternalReference,
   validateAmount,
@@ -19,6 +20,7 @@ const validateCpfCnpj = (v: string): boolean => {
 const schema = z.object({
   campaignId: z.string().trim().max(60).default('micaela'),
   amount: z.number().positive(),
+  donationIntentId: z.string().trim().min(8).max(128).optional(),
   currency: z.enum(['BRL']).default('BRL'),
   customerEmail: z.string().trim().email().max(160),
   customerName: z.string().trim().max(120).optional(),
@@ -77,11 +79,22 @@ export async function POST(req: NextRequest) {
     return badRequest(e instanceof Error ? e.message : 'Valor inválido.')
   }
 
+  let donationIntentId: string | null
+  try {
+    donationIntentId = await resolveDonationIntentId(d.donationIntentId, {
+      campaignId: campaign.id, currency: d.currency, amount: amountStr,
+      paymentMethod: 'pix_automatic', customerEmail: d.customerEmail,
+    })
+  } catch (e) {
+    return badRequest(e instanceof Error ? e.message : 'Intenção inválida.')
+  }
+
   // 3) Create internal PaymentOrder
   const internalReference = generateInternalReference()
   const order = await db.paymentOrder.create({
     data: {
       campaignId: campaign.id,
+      donationIntentId,
       provider: 'pixgo',
       method: 'pix_automatic',
       internalReference,
@@ -106,8 +119,8 @@ export async function POST(req: NextRequest) {
 
   // 4) Call PixGo API
   try {
-    const origin = req.headers.get('origin') ?? 'https://ajudar.charity'
-    const webhookUrl = `${origin}/api/webhooks/pixgo`
+    const baseUrl = (process.env.APP_BASE_URL ?? 'https://ajudar.charity').replace(/\/$/, '')
+    const webhookUrl = `${baseUrl}/api/webhooks/pixgo`
 
     const pixgoResponse = await createPixGoPayment({
       amount: d.amount,

@@ -1,4 +1,5 @@
 import { Resend } from 'resend'
+import { createHash } from 'node:crypto'
 import { db } from '@/lib/db'
 import { audit } from '@/lib/audit'
 
@@ -58,15 +59,23 @@ export async function sendThankYouEmail(params: SendEmailParams): Promise<{
   // Idempotency: check if an email was already sent OR is being processed for this
   // (channel=email, toAddress, donationIntentId) pair. If a message already exists
   // (any status), don't create a duplicate — retry the existing one if it failed.
-  const existing = await db.outboundMessage.findFirst({
-    where: {
-      channel: 'email',
-      toAddress: to,
-      donationIntentId: donationIntentId ?? undefined,
-    },
-    orderBy: { createdAt: 'desc' },
-  })
+  if (!orderId && !donationIntentId) {
+    return { sent: false, error: 'É necessária uma referência de doação ou ordem.' }
+  }
+  // Stable primary key is unique at DB level even with nullable donationIntentId.
+  // A second donation from the same email gets a different id.
+  const scope = orderId ? `order:${orderId}` : `intent:${donationIntentId}`
+  const messageKey = 'thankyou-' + createHash('sha256').update(scope).digest('hex').slice(0, 32)
+  const existing = await db.outboundMessage.findUnique({ where: { id: messageKey } })
   if (existing) {
+    if (existing.status === 'pending') return { sent: false, messageId: existing.id }
+    if (existing.status === 'failed') {
+      const claimed = await db.outboundMessage.updateMany({
+        where: { id: existing.id, status: 'failed' },
+        data: { status: 'pending' },
+      })
+      if (claimed.count !== 1) return { sent: false, messageId: existing.id }
+    }
     // If already sent, don't resend (idempotency)
     if (existing.status === 'sent') {
       return { sent: false, messageId: existing.id }
@@ -85,6 +94,7 @@ export async function sendThankYouEmail(params: SendEmailParams): Promise<{
         await db.outboundMessage.update({
           where: { id: existing.id },
           data: {
+            status: 'failed',
             attempts: { increment: 1 },
             lastError: error.message?.slice(0, 300) ?? 'Unknown error',
           },
@@ -105,6 +115,7 @@ export async function sendThankYouEmail(params: SendEmailParams): Promise<{
       await db.outboundMessage.update({
         where: { id: existing.id },
         data: {
+          status: 'failed',
           attempts: { increment: 1 },
           lastError: errMsg.slice(0, 300),
         },
@@ -116,6 +127,7 @@ export async function sendThankYouEmail(params: SendEmailParams): Promise<{
   // Create a new OutboundMessage (pending)
   const msg = await db.outboundMessage.create({
     data: {
+      id: messageKey,
       campaignId,
       toAddress: to,
       channel: 'email',
@@ -189,7 +201,15 @@ export async function sendThankYouEmail(params: SendEmailParams): Promise<{
  * Builds the thank-you email HTML for a confirmed payment.
  * This is informational, NOT a fiscal receipt.
  */
+function escapeHtml(value: string): string {
+  return value.replace(/[&<>"']/g, (c) => ({'&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;'}[c] ?? c))
+}
+
 export function buildThankYouHtml(campaignName: string, amount: string, currency: string, reference: string): string {
+  campaignName = escapeHtml(campaignName)
+  amount = escapeHtml(amount)
+  currency = escapeHtml(currency)
+  reference = escapeHtml(reference)
   return `
 <!DOCTYPE html>
 <html lang="pt">

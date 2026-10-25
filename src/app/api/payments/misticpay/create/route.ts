@@ -6,10 +6,12 @@ import { clientIp } from '@/lib/auth'
 import { audit } from '@/lib/audit'
 import { createMisticPayPayment } from '@/lib/providers/misticpay'
 import { generateInternalReference, validateAmount } from '@/lib/payments/types'
+import { resolveDonationIntentId } from '@/lib/payments/intent'
 
 const schema = z.object({
   campaignId: z.string().trim().max(60).default('micaela'),
   amount: z.number().positive(),
+  donationIntentId: z.string().trim().min(8).max(128).optional(),
   currency: z.enum(['BRL']).default('BRL'),
   customerEmail: z.string().trim().email().max(160),
   customerName: z.string().trim().max(120),
@@ -62,11 +64,22 @@ export async function POST(req: NextRequest) {
     return badRequest(e instanceof Error ? e.message : 'Valor inválido.')
   }
 
+  let donationIntentId: string | null
+  try {
+    donationIntentId = await resolveDonationIntentId(d.donationIntentId, {
+      campaignId: campaign.id, currency: d.currency, amount: amountStr,
+      paymentMethod: 'pix_automatic', customerEmail: d.customerEmail,
+    })
+  } catch (e) {
+    return badRequest(e instanceof Error ? e.message : 'Intenção inválida.')
+  }
+
   // Create internal PaymentOrder
   const internalReference = generateInternalReference()
   const order = await db.paymentOrder.create({
     data: {
       campaignId: campaign.id,
+      donationIntentId,
       provider: 'misticpay',
       method: 'pix_automatic',
       internalReference,
