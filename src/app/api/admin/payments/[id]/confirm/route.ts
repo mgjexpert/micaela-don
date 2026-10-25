@@ -5,6 +5,7 @@ import { json, badRequest, unauthorized, notFound } from '@/lib/api'
 import { requireAdmin, clientIp } from '@/lib/auth'
 import { audit } from '@/lib/audit'
 import { fulfillPayment } from '@/lib/notifications/fulfillment'
+import { synchronizeDonationIntent } from '@/lib/payments/intent'
 
 const schema = z.object({
   reason: z.string().trim().max(500).optional(),
@@ -34,9 +35,8 @@ export async function POST(req: NextRequest, { params }: Params) {
     return badRequest('Apenas pagamentos manuais podem ser confirmados manualmente.')
   }
 
-  // Already confirmed?
-  if (order.status === 'paid') {
-    return badRequest('Este pagamento já foi confirmado.')
+  if (order.status !== 'pending' && order.status !== 'processing') {
+    return badRequest('Apenas pagamentos pendentes podem ser confirmados.')
   }
 
   let body: unknown
@@ -67,6 +67,7 @@ export async function POST(req: NextRequest, { params }: Params) {
     ip: clientIp(req),
   })
 
+  await synchronizeDonationIntent(id, 'paid')
   // Trigger fulfillment (email + delivery) — idempotent
   const fulfillment = await fulfillPayment(id)
 

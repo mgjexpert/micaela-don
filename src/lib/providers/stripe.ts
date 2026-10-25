@@ -76,6 +76,7 @@ export async function createCheckoutSession(params: CreateSessionParams): Promis
     ],
     customer_email: params.customerEmail,
     client_reference_id: params.internalReference,
+    payment_intent_data: { metadata: { internal_reference: params.internalReference, ...params.metadata } },
     metadata: {
       internal_reference: params.internalReference,
       campaign_name: params.campaignName,

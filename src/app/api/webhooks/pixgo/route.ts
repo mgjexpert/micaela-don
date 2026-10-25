@@ -3,6 +3,7 @@ import { db } from '@/lib/db'
 import { verifyPixGoSignature, isTimestampWithinTolerance, hashPayload } from '@/lib/payments/webhook'
 import { audit } from '@/lib/audit'
 import { fulfillPayment } from '@/lib/notifications/fulfillment'
+import { synchronizeDonationIntent } from '@/lib/payments/intent'
 
 /**
  * PixGo webhook — validates HMAC-SHA256 signature, processes events idempotently.
@@ -131,7 +132,7 @@ async function findOrder(payload: { payment_id?: string; external_id?: string })
     const byRef = await db.paymentOrder.findUnique({
       where: { internalReference: payload.external_id },
     })
-    if (byRef) return byRef
+    if (byRef?.provider === 'pixgo') return byRef
   }
   // Fallback: payment_id (PixGo's id stored as externalId)
   if (payload.payment_id) {
@@ -154,6 +155,12 @@ async function processPixGoEvent(
       // Verify: status matches, amount matches (defence-in-depth)
       const order = await db.paymentOrder.findUnique({ where: { id: orderId } })
       if (!order) return
+      const validAmount = typeof payload.amount === 'number' && Number.isFinite(payload.amount)
+        && Math.round(payload.amount * 100) === Math.round(Number(order.amount) * 100)
+      if (!validAmount || payload.status?.toLowerCase() !== 'completed' || order.currency !== 'BRL') {
+        throw new Error('PixGo payment amount or status mismatched')
+      }
+      if (order.status === 'refunded') return
       // Only transition to paid if not already paid (idempotency)
       if (order.status !== 'paid') {
         await db.paymentOrder.update({
@@ -167,16 +174,20 @@ async function processPixGoEvent(
           entityId: orderId,
           detail: `provider=pixgo method=pix_automatic amount=${order.amount}`,
         })
+        await synchronizeDonationIntent(orderId, 'paid')
         // Trigger email + delivery (idempotent)
         await fulfillPayment(orderId)
       }
       break
     }
     case 'payment.expired': {
+      const order = await db.paymentOrder.findUnique({ where: { id: orderId } })
+      if (order?.status === 'paid' || order?.status === 'refunded') return
       await db.paymentOrder.update({
         where: { id: orderId },
         data: { status: 'expired' },
       })
+      await synchronizeDonationIntent(orderId, 'expired')
       break
     }
     case 'payment.refunded': {
@@ -184,6 +195,7 @@ async function processPixGoEvent(
         where: { id: orderId },
         data: { status: 'refunded', refundedAt: new Date() },
       })
+      await synchronizeDonationIntent(orderId, 'refunded')
       break
     }
     default:

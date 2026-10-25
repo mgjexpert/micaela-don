@@ -4,6 +4,7 @@ import { audit } from '@/lib/audit'
 import { hashPayload } from '@/lib/payments/webhook'
 import { getMisticPayPaymentStatus, reconcileMisticPay } from '@/lib/providers/misticpay'
 import { fulfillPayment } from '@/lib/notifications/fulfillment'
+import { synchronizeDonationIntent } from '@/lib/payments/intent'
 
 /**
  * MisticPay webhook = untrusted notification. Never trust a posted "COMPLETO".
@@ -98,12 +99,16 @@ export async function POST(req: NextRequest) {
           detail: 'Confirmed using authenticated transaction status',
         })
       }
-      if (order.status !== 'refunded') await fulfillPayment(order.id)
+      if (order.status !== 'refunded') {
+        await synchronizeDonationIntent(order.id, 'paid')
+        await fulfillPayment(order.id)
+      }
     } else if (state === 'DEVOLVIDO') {
       await db.paymentOrder.update({
         where: { id: order.id },
         data: { status: 'refunded', refundedAt: new Date() },
       })
+      await synchronizeDonationIntent(order.id, 'refunded')
     } else if (state === 'DEVOLVIDO_PARCIAL') {
       await db.paymentOrder.update({
         where: { id: order.id },
@@ -112,6 +117,7 @@ export async function POST(req: NextRequest) {
     } else if (state === 'FALHA' || state === 'CANCELADO') {
       if (order.status !== 'paid' && order.status !== 'refunded') {
         await db.paymentOrder.update({ where: { id: order.id }, data: { status: 'failed' } })
+        await synchronizeDonationIntent(order.id, 'failed')
       }
     }
     // PENDENTE: retain current state. The webhook is only a notification.

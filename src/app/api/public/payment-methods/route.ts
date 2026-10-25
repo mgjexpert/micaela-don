@@ -13,7 +13,7 @@ export async function GET(req: NextRequest) {
   const campaignId = searchParams.get('campaignId') ?? 'micaela'
 
   const stripeConfigured = !!process.env.STRIPE_SECRET_KEY
-  const pixgoConfigured = !!process.env.PIXGO_API_KEY
+  const pixgoConfigured = !!process.env.PIXGO_API_KEY && process.env.ENABLE_PIXGO === 'true'
   const misticpayConfigured = !!(process.env.MISTICPAY_CLIENT_ID && process.env.MISTICPAY_CLIENT_SECRET)
 
   let pixManualAvailable = false

@@ -4,6 +4,7 @@ import { verifyStripeWebhook } from '@/lib/providers/stripe'
 import { hashPayload } from '@/lib/payments/webhook'
 import { audit } from '@/lib/audit'
 import { fulfillPayment } from '@/lib/notifications/fulfillment'
+import { synchronizeDonationIntent } from '@/lib/payments/intent'
 
 /**
  * Stripe webhook — validates signature over raw body, processes events idempotently.
@@ -92,7 +93,8 @@ export async function POST(req: NextRequest) {
  */
 async function processStripeEvent(event: { type: string; data: { object: Record<string, unknown> } }, eventId: string): Promise<void> {
   const obj = event.data.object as Record<string, unknown>
-  const clientReferenceId = obj.client_reference_id as string | undefined
+  const meta = obj.metadata && typeof obj.metadata === 'object' ? obj.metadata as Record<string, unknown> : {}
+  const clientReferenceId = (obj.client_reference_id ?? meta.internal_reference) as string | undefined
   const sessionId = obj.id as string | undefined
 
   // Find the order by internal reference (preferred) or external id
@@ -108,6 +110,7 @@ async function processStripeEvent(event: { type: string; data: { object: Record<
       where: { provider: 'stripe', externalId: sessionId },
     })
   }
+  if (order?.provider !== 'stripe') order = null
   if (!order) {
     // Order not found — log but don't fail (might be from a different system)
     await audit({
@@ -120,12 +123,21 @@ async function processStripeEvent(event: { type: string; data: { object: Record<
     return
   }
 
+  const sessionEvent = event.type.startsWith('checkout.session.')
+  if (sessionEvent || event.type === 'payment_intent.succeeded') {
+    const money = sessionEvent ? obj.amount_total : obj.amount_received
+    if (typeof money !== 'number' || Math.round(money) !== Math.round(Number(order.amount) * 100)
+      || String(obj.currency ?? '').toUpperCase() !== order.currency) {
+      throw new Error('Stripe amount/currency mismatch')
+    }
+  }
+
   switch (event.type) {
     case 'checkout.session.async_payment_succeeded':
     case 'checkout.session.completed': {
       // Checkout completed ≠ paid. Check payment_status.
       const paymentStatus = obj.payment_status as string
-      if (paymentStatus === 'paid') {
+      if (paymentStatus === 'paid' && order.status !== 'refunded') {
         await db.paymentOrder.update({
           where: { id: order.id },
           data: {
@@ -141,9 +153,10 @@ async function processStripeEvent(event: { type: string; data: { object: Record<
           entityId: order.id,
           detail: `provider=stripe method=mbway amount=${order.amount}`,
         })
+        await synchronizeDonationIntent(order.id, 'paid')
         // Trigger email + delivery (idempotent)
         await fulfillPayment(order.id)
-      } else {
+      } else if (order.status !== 'paid' && order.status !== 'refunded') {
         // Still pending payment (e.g. MB WAY pending confirmation)
         await db.paymentOrder.update({
           where: { id: order.id },
@@ -155,7 +168,7 @@ async function processStripeEvent(event: { type: string; data: { object: Record<
     case 'payment_intent.succeeded': {
       // Confirm paid (if not already)
       const current = await db.paymentOrder.findUnique({ where: { id: order.id } })
-      if (current && current.status !== 'paid') {
+      if (current && current.status !== 'paid' && current.status !== 'refunded') {
         await db.paymentOrder.update({
           where: { id: order.id },
           data: { status: 'paid', confirmedAt: new Date() },
@@ -167,6 +180,7 @@ async function processStripeEvent(event: { type: string; data: { object: Record<
           entityId: order.id,
           detail: `event=payment_intent.succeeded`,
         })
+        await synchronizeDonationIntent(order.id, 'paid')
         // Trigger email + delivery (idempotent)
         await fulfillPayment(order.id)
       }
@@ -174,10 +188,13 @@ async function processStripeEvent(event: { type: string; data: { object: Record<
     }
     case 'checkout.session.async_payment_failed':
     case 'payment_intent.payment_failed': {
-      await db.paymentOrder.update({
-        where: { id: order.id },
-        data: { status: 'failed' },
-      })
+      if (order.status !== 'paid' && order.status !== 'refunded') {
+        await db.paymentOrder.update({
+          where: { id: order.id },
+          data: { status: 'failed' },
+        })
+        await synchronizeDonationIntent(order.id, 'failed')
+      }
       break
     }
     case 'charge.refunded': {
@@ -185,6 +202,7 @@ async function processStripeEvent(event: { type: string; data: { object: Record<
         where: { id: order.id },
         data: { status: 'refunded', refundedAt: new Date() },
       })
+      await synchronizeDonationIntent(order.id, 'refunded')
       break
     }
     default:

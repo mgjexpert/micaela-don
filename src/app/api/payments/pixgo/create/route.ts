@@ -47,6 +47,7 @@ const schema = z.object({
  * approval. This is a safety measure.
  */
 export async function POST(req: NextRequest) {
+  if (process.env.ENABLE_PIXGO !== 'true') return badRequest('PixGo ainda não está homologado.')
   let body: unknown
   try {
     body = await req.json()
