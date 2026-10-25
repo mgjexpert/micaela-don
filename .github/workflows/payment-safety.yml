@@ -16,7 +16,7 @@ jobs:
       - uses: oven-sh/setup-bun@v2
       - name: Install locked dependencies
         run: bun install --frozen-lockfile
-      - name: Provider reconciliation tests
+      - name: Unit and payment safety tests
         run: node --experimental-strip-types --test tests/*.test.mjs
       - name: Lint
         run: bun run lint

@@ -12,7 +12,7 @@
 3. Stripe / MisticPay / PixGo / manual PIX creates a linked PaymentOrder using `donationIntentId` and server-side amount verification.
 4. A provider-verified webhook or manual admin confirmation marks the PaymentOrder paid and synchronizes the DonationIntent.
 5. Thank-you email is scoped with a deterministic per-payment database id. Do not send marketing emails automatically.
-6. Pack Media remains disabled until content delivery, asset security, and authorization are ready.
+6. Pack Media is implemented with generated downloadable assets, curated approved media, and seven-day links; requires settlement and donor opt-in. See `docs/pack-media.md`.
 
 ## Expected deployment configuration — set in Vercel, never in Git
 Mandatory for operational checkout:
@@ -40,5 +40,5 @@ Release checks:
 - A passed CI build does not establish a verified database migration, real provider callback or guaranteed donation capture.
 - Public domain was not externally reachable from the available browsing tool. Validate DNS, TLS, redirects and deployment aliases in Vercel.
 - Prisma's fallback for older DB schemas is a migration debt, especially for multi-campaign content. Release only against fully migrated schema.
-- Digital delivery is not complete; do not promise the Pack Media yet.
+- Pack Media delivery is implemented in source code but NOT YET DEPLOYED to the existing production Vercel project; the private-link workflow still requires live DB, Resend and payment checks.
 - Launch requires campaign owner approval of recipient accounts, visible text, legal disclosures and privacy information.

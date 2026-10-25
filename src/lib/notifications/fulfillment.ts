@@ -44,13 +44,14 @@ export async function fulfillPayment(orderId: string): Promise<FulfillmentResult
       const { token } = await ensurePackDeliveryLink(order.id, order.campaignId)
       deliveryLink = '/pack/' + token
       const publicUrl = getCanonicalAppBaseUrl() + deliveryLink
-      html += '<div style="margin:20px 0;padding:18px;background:#fff1f2;border-radius:12px">'
+      const packHtml = '<div style="margin:20px 0;padding:18px;background:#fff1f2;border-radius:12px">'
         + '<h2 style="color:#9f1239">O seu Pack Media está pronto</h2>'
         + '<p>Aceda ao cartão de agradecimento, à mensagem de partilha e aos materiais aprovados desta campanha.</p>'
         + '<p><a href="' + publicUrl
         + '" style="background:#be123c;color:#fff;padding:12px 20px;display:inline-block;border-radius:8px">'
         + 'Abrir o Pack Media</a></p>'
         + '<p style="font-size:12px;color:#78716c">Acesso pessoal válido durante 7 dias. Guarde este e-mail.</p></div>'
+      html = html.replace('</body>', packHtml + '</body>')
     }
   }
 
