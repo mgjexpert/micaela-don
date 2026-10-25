@@ -28,9 +28,7 @@ export async function GET(req: NextRequest) {
     const pix = await db.pixConfig.findFirst({
       where: { campaignId },
       orderBy: { updatedAt: 'desc' },
-    }).catch(() =>
-      db.pixConfig.findFirst({ orderBy: { updatedAt: 'desc' } }).catch(() => null),
-    ) as { approved?: boolean; published?: boolean; beneficiaryName?: string } | null
+    }) as { approved?: boolean; published?: boolean; beneficiaryName?: string } | null
 
     if (pix && pix.approved && pix.published) {
       pixManualAvailable = true
@@ -44,9 +42,7 @@ export async function GET(req: NextRequest) {
     const payment = await db.paymentConfig.findFirst({
       where: { campaignId },
       orderBy: { updatedAt: 'desc' },
-    }).catch(() =>
-      db.paymentConfig.findFirst({ orderBy: { updatedAt: 'desc' } }).catch(() => null),
-    ) as { approved?: boolean; published?: boolean; holder?: string; iban?: string; bank?: string; bic?: string | null } | null
+    }) as { approved?: boolean; published?: boolean; holder?: string; iban?: string; bank?: string; bic?: string | null } | null
 
     if (payment && payment.approved && payment.published) {
       bankTransferAvailable = true

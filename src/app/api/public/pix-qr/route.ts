@@ -6,8 +6,12 @@ import { notFound } from '@/lib/api'
  * Streams the PIX QR image. Returns 404 unless approved && published && qrImageData present.
  * This is the single public surface for the QR; the raw image bytes never live in /public.
  */
-export async function GET(_req: NextRequest) {
-  const pix = await db.pixConfig.findFirst({ orderBy: { updatedAt: 'desc' } })
+export async function GET(req: NextRequest) {
+  const campaignId = new URL(req.url).searchParams.get('campaignId') ?? 'micaela'
+  const pix = await db.pixConfig.findFirst({
+    where: { campaignId, approved: true, published: true },
+    orderBy: { updatedAt: 'desc' },
+  })
   if (!pix || !pix.approved || !pix.published || !pix.qrImageData || !pix.qrImageMime) {
     return notFound('QR não disponível.')
   }

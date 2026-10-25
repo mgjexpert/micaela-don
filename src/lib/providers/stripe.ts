@@ -75,6 +75,7 @@ export async function createCheckoutSession(params: CreateSessionParams): Promis
       },
     ],
     customer_email: params.customerEmail,
+    payment_method_types: ['mb_way'],
     client_reference_id: params.internalReference,
     payment_intent_data: { metadata: { internal_reference: params.internalReference, ...params.metadata } },
     metadata: {

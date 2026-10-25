@@ -79,6 +79,9 @@ export async function POST(req: NextRequest) {
     return badRequest('Para consentir em receber agradecimento por WhatsApp, indique um número válido com indicativo internacional (ex: +351 912 345 678).')
   }
 
+  const campaign = await db.campaign.findUnique({ where: { id: d.campaignId }, select: { status: true } })
+  if (!campaign || campaign.status !== 'published') return badRequest('Campanha não disponível.')
+
   // Validate: payment method compatibility with currency
   const methodCurrencyOk =
     (d.paymentMethod === 'mbway' && d.currency === 'EUR') ||
@@ -96,75 +99,40 @@ export async function POST(req: NextRequest) {
     ? 'awaiting_manual_confirmation'
     : 'pending'
 
-  // Create the donation intent (resilient: fallback to raw INSERT if columns missing)
-  const intent = await db.donationIntent.create({
-    data: {
-      campaignId: d.campaignId,
-      currency: d.currency,
-      amount: d.amountMinor / 100, // legacy Float field (for backward compat)
-      amountMinor: d.amountMinor,
-      donorName: d.donorName,
-      donorEmail: d.donorEmail,
-      donorWhatsapp: d.donorWhatsapp || null,
-      donorCountry: d.donorCountry || null,
-      paymentMethod: d.paymentMethod,
-      wantPackMedia: d.wantPackMedia,
-      message: d.message || null,
-      status: initialStatus,
-      ip,
-    },
-  }).catch(async (err) => {
-    const code = (err as { code?: string })?.code
-    if (code === 'P2021' || code === 'P2022') {
-      // Fallback: raw INSERT with original + new columns (IF they exist)
-      const rows = await db.$queryRawUnsafe(
-        `INSERT INTO donation_intent (id, currency, amount, donor_name, donor_email, message, status, ip, created_at, updated_at)
-         VALUES (gen_random_uuid()::text, $1, $2, $3, $4, $5, $6, $7, now(), now())
-         RETURNING id, status`,
-        d.currency,
-        d.amountMinor / 100,
-        d.donorName,
-        d.donorEmail,
-        d.message || null,
-        initialStatus,
+  // Create intent + explicit channel consents atomically.
+  // No silent legacy-SQL fallback: database migrations are a release prerequisite.
+  const intent = await db.$transaction(async (tx) => {
+    const created = await tx.donationIntent.create({
+      data: {
+        campaignId: d.campaignId,
+        currency: d.currency,
+        amount: d.amountMinor / 100,
+        amountMinor: d.amountMinor,
+        donorName: d.donorName,
+        donorEmail: d.donorEmail,
+        donorWhatsapp: d.donorWhatsapp || null,
+        donorCountry: d.donorCountry || null,
+        paymentMethod: d.paymentMethod,
+        wantPackMedia: d.wantPackMedia,
+        message: d.message || null,
+        status: initialStatus,
         ip,
-      ) as Array<{ id: string; status: string }>
-      return rows[0] ?? { id: 'unknown', status: initialStatus }
-    }
-    throw err
-  })
-
-  // Record consent per channel (resilient)
-  for (const channel of d.consentChannels) {
-    try {
-      await db.consentRecord.create({
-        data: {
+      },
+    })
+    if (d.consentChannels.length) {
+      await tx.consentRecord.createMany({
+        data: d.consentChannels.map(channel => ({
           campaignId: d.campaignId,
           donorEmail: d.donorEmail,
           donorName: d.donorName,
           channel,
           consent: true,
           ip,
-        },
+        })),
       })
-    } catch (err) {
-      const code = (err as { code?: string })?.code
-      if (code === 'P2021' || code === 'P2022') {
-        try {
-          await db.$executeRawUnsafe(
-            `INSERT INTO consent_record (id, donor_email, donor_name, channel, consent, ip, created_at)
-             VALUES (gen_random_uuid()::text, $1, $2, $3, true, $4, now())`,
-            d.donorEmail,
-            d.donorName,
-            channel,
-            ip,
-          )
-        } catch {
-          // non-critical
-        }
-      }
     }
-  }
+    return created
+  })
 
   await audit({
     actor: 'public',

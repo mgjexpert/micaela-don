@@ -340,7 +340,7 @@ export function DonationFlow({ campaignId, campaignName }: { campaignId: string;
   }
 
   if (result && (result.paymentMethod === 'pix_manual' || result.paymentMethod === 'bank_transfer')) {
-    return <ManualPaymentResult result={result} methods={methods} paymentMethod={result.paymentMethod} campaignName={campaignName} />
+    return <ManualPaymentResult result={result} methods={methods} paymentMethod={result.paymentMethod} campaignName={campaignName} campaignId={campaignId} />
   }
 
   return (
@@ -826,12 +826,13 @@ function SummaryRow({ label, value }: { label: string; value: string }) {
 }
 
 function ManualPaymentResult({
-  result, methods, paymentMethod, campaignName,
+  result, methods, paymentMethod, campaignName, campaignId,
 }: {
   result: { id: string; paymentMethod: string }
   methods: PaymentMethodsResponse | null
   paymentMethod: string
   campaignName: string
+  campaignId: string
 }) {
   const [copied, setCopied] = useState(false)
   const bank = methods?.methods.bank_transfer
@@ -868,7 +869,7 @@ function ManualPaymentResult({
             <p className="text-sm font-medium">Pagamento via PIX:</p>
             {pix.beneficiaryName && <p className="text-sm text-muted-foreground">Beneficiário: {pix.beneficiaryName}</p>}
             <div className="flex flex-col items-center gap-3 rounded-lg border bg-muted/30 p-4">
-              <img src="/api/public/pix-qr" alt="QR Code PIX" className="h-48 w-48 rounded-lg border bg-white p-2" />
+              <img src={`/api/public/pix-qr?campaignId=${encodeURIComponent(campaignId)}`} alt="QR Code PIX" className="h-48 w-48 rounded-lg border bg-white p-2" />
               <p className="text-xs text-muted-foreground">Leia o QR Code com a sua app de banco para pagar.</p>
             </div>
           </div>

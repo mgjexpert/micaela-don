@@ -13,7 +13,7 @@ const geistMono = Geist_Mono({
   subsets: ["latin"],
 });
 
-const siteUrl = "https://micaela-don.vercel.app";
+const siteUrl = process.env.APP_BASE_URL ?? "https://ajudar.charity";
 
 export const metadata: Metadata = {
   metadataBase: new URL(siteUrl),
@@ -22,7 +22,7 @@ export const metadata: Metadata = {
     template: "%s · Um Gesto de Apoio",
   },
   description:
-    "Campanha de solidariedade. Cada contribuição é um gesto concreto de cuidado. Dados de pagamento verificados administrativamente; cada donativo é confirmado manualmente.",
+    "Campanha de solidariedade. Cada contribuição é um gesto concreto de cuidado. Dados de pagamento verificados. Confirmação do donativo por fornecedor de pagamentos ou administrador.",
   keywords: ["solidariedade", "donativo", "Micaela", "campanha", "apoio", "PIX", "SEPA"],
   authors: [{ name: "Um Gesto de Apoio" }],
   creator: "Um Gesto de Apoio",
