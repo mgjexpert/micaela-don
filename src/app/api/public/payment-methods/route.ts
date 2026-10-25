@@ -63,6 +63,7 @@ export async function GET(req: NextRequest) {
   }
 
   return json({
+    packMedia: { available: true, included: ['cartao_de_agradecimento', 'texto_de_partilha', 'materiais_aprovados'] },
     methods: {
       mbway: {
         available: stripeConfigured,

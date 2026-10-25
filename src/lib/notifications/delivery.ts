@@ -1,5 +1,6 @@
 import { randomBytes } from 'node:crypto'
 import { db } from '@/lib/db'
+import { isSafePackUrl } from '@/lib/pack-media/assets'
 
 /**
  * Digital delivery layer — server-only.
@@ -121,5 +122,69 @@ export async function peekDeliveryLink(token: string): Promise<{
     expired,
     consumed,
     paid,
+  }
+}
+
+/**
+ * Seven-day private pack, reusable until expiry. Email link scanners must not
+ * exhaust the delivery token on their first GET request.
+ */
+export async function ensurePackDeliveryLink(
+  orderId: string,
+  campaignId: string,
+): Promise<{ token: string; expiresAt: Date }> {
+  const assetRef = 'pack:' + campaignId
+  const existing = await db.deliveryLink.findFirst({
+    where: { orderId, assetRef, expiresAt: { gt: new Date() }, consumedAt: null },
+    orderBy: { createdAt: 'desc' },
+  })
+  return existing
+    ? { token: existing.token, expiresAt: existing.expiresAt }
+    : createDeliveryLink(orderId, assetRef, 24 * 7)
+}
+
+export type PackDelivery = {
+  campaignName: string
+  campaignSlug: string
+  expiresAt: Date
+  materials: Array<{ id: string; name: string; category: string; url: string; description: string | null }>
+}
+
+/** Revalidate paid status, explicit opt-in, campaign ownership, expiry and approved assets. */
+export async function getPackDelivery(token: string): Promise<PackDelivery | null> {
+  if (!/^[A-Za-z0-9_-]{32,64}$/.test(token)) return null
+  const delivery = await db.deliveryLink.findUnique({ where: { token } })
+  if (!delivery || delivery.consumedAt || delivery.expiresAt <= new Date()
+    || !delivery.assetRef.startsWith('pack:')) return null
+
+  const order = await db.paymentOrder.findUnique({
+    where: { id: delivery.orderId },
+    select: { campaignId: true, donationIntentId: true, status: true },
+  })
+  if (!order || order.status !== 'paid' || !order.donationIntentId
+    || delivery.assetRef !== 'pack:' + order.campaignId) return null
+
+  const intent = await db.donationIntent.findUnique({
+    where: { id: order.donationIntentId },
+    select: { wantPackMedia: true, campaignId: true },
+  })
+  if (!intent?.wantPackMedia || intent.campaignId !== order.campaignId) return null
+
+  const campaign = await db.campaign.findUnique({
+    where: { id: order.campaignId },
+    select: { name: true, slug: true },
+  })
+  if (!campaign) return null
+  const materials = await db.campaignMaterial.findMany({
+    where: { campaignId: order.campaignId, approved: true, published: true },
+    orderBy: { createdAt: 'desc' },
+    take: 50,
+    select: { id: true, name: true, category: true, url: true, description: true },
+  })
+  return {
+    campaignName: campaign.name,
+    campaignSlug: campaign.slug,
+    expiresAt: delivery.expiresAt,
+    materials: materials.filter(m => isSafePackUrl(m.url)),
   }
 }

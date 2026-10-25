@@ -28,6 +28,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import { Checkbox } from '@/components/ui/checkbox'
 
 type PaymentMethodsResponse = {
+  packMedia?: { available: boolean; included?: string[] }
   methods: {
     mbway: { available: boolean; currencies: string[]; reason?: string | null }
     pix_automatic: { available: boolean; currencies: string[]; reason?: string | null }
@@ -405,7 +406,7 @@ export function DonationFlow({ campaignId, campaignName }: { campaignId: string;
           <Step4PackMedia
             wantPackMedia={wantPackMedia}
             setWantPackMedia={setWantPackMedia}
-            hasMaterials={false}
+            hasMaterials={methods?.packMedia?.available === true}
             onBack={() => setStep(3)}
             onNext={() => setStep(5)}
           />
@@ -745,7 +746,7 @@ function Step4PackMedia({
           </p>
           {!hasMaterials && (
             <p className="mt-2 text-xs text-amber-700 dark:text-amber-400">
-              O Pack Media será disponibilizado após publicação dos materiais e validação da entrega digital.
+              O Pack Media ainda não está disponível nesta campanha.
             </p>
           )}
           <p className="mt-2 text-xs text-muted-foreground">
