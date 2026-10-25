@@ -1,6 +1,6 @@
 import { randomBytes } from 'node:crypto'
 import { db } from '@/lib/db'
-import { isSafePackUrl } from '@/lib/pack-media/assets'
+import { isSafePackUrl, isAuthorizedPackAccess } from '@/lib/pack-media/assets'
 
 /**
  * Digital delivery layer — server-only.
@@ -154,21 +154,26 @@ export type PackDelivery = {
 export async function getPackDelivery(token: string): Promise<PackDelivery | null> {
   if (!/^[A-Za-z0-9_-]{32,64}$/.test(token)) return null
   const delivery = await db.deliveryLink.findUnique({ where: { token } })
-  if (!delivery || delivery.consumedAt || delivery.expiresAt <= new Date()
-    || !delivery.assetRef.startsWith('pack:')) return null
+  if (!delivery || !delivery.assetRef.startsWith('pack:')) return null
 
   const order = await db.paymentOrder.findUnique({
     where: { id: delivery.orderId },
     select: { campaignId: true, donationIntentId: true, status: true },
   })
-  if (!order || order.status !== 'paid' || !order.donationIntentId
-    || delivery.assetRef !== 'pack:' + order.campaignId) return null
+  if (!order?.donationIntentId) return null
 
   const intent = await db.donationIntent.findUnique({
     where: { id: order.donationIntentId },
     select: { wantPackMedia: true, campaignId: true },
   })
-  if (!intent?.wantPackMedia || intent.campaignId !== order.campaignId) return null
+  if (!isAuthorizedPackAccess({
+    paid: order.status === 'paid',
+    optedIn: intent?.wantPackMedia === true,
+    sameCampaign: delivery.assetRef === 'pack:' + order.campaignId
+      && intent?.campaignId === order.campaignId,
+    notExpired: delivery.expiresAt > new Date(),
+    notConsumed: !delivery.consumedAt,
+  })) return null
 
   const campaign = await db.campaign.findUnique({
     where: { id: order.campaignId },

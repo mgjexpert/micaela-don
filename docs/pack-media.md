@@ -28,3 +28,7 @@ Os itens 1 e 2 funcionam mesmo que o catálogo de materiais da campanha ainda es
 - Os materiais externos dependem dos acessos e permissões do Google Drive/YouTube/origem; links privados mal configurados podem exigir login.
 - Este pack contém os dois materiais gerados e os recursos aprovados; **não é ainda um ZIP multimédia nem um sistema de armazenamento privado de vídeos/PDFs**.
 - Pagamentos e e-mail reais exigem as credenciais e a base de dados da instalação existente.
+
+## Transferência bancária e recuperação
+Após confirmação de um donativo SEPA pelo administrador, é criada uma ordem `manual_bank` e o Pack Media passa pela mesma validação do pagamento confirmado e do opt-in.
+Se a Resend não entregar o e-mail, o administrador autenticado pode consultar `GET /api/admin/payments/<id>/pack` para obter uma ligação de acesso pessoal e partilhá-la através de canal seguro.

@@ -45,3 +45,14 @@ export function createPackShareText(campaignName: string, campaignUrl: string): 
     'Não divulgue dados pessoais ou comprovativos bancários.',
   ].join('\n')
 }
+
+/** Pure access rule shared by the delivery handler and unit tests. */
+export function isAuthorizedPackAccess(flags: {
+  paid: boolean
+  optedIn: boolean
+  sameCampaign: boolean
+  notExpired: boolean
+  notConsumed: boolean
+}): boolean {
+  return flags.paid && flags.optedIn && flags.sameCampaign && flags.notExpired && flags.notConsumed
+}
