@@ -59,7 +59,7 @@ const COUNTRY_LABELS: Record<string, string> = {
 }
 
 const METHOD_LABELS: Record<string, { label: string; icon: typeof Landmark; desc: string }> = {
-  mbway: { label: 'MB WAY', icon: CreditCard, desc: 'Pagamento instantâneo via Stripe' },
+  mbway: { label: 'Pagamento EUR', icon: CreditCard, desc: 'Métodos seguros disponíveis na Stripe, incluindo MB WAY quando elegível' },
   pix_automatic: { label: 'PIX Automático', icon: QrCode, desc: 'QR Code gerado automaticamente' },
   pix_manual: { label: 'PIX Manual', icon: QrCode, desc: 'QR Code e código Copia e Cola' },
   bank_transfer: { label: 'Transferência Bancária', icon: Landmark, desc: 'IBAN (SEPA)' },
@@ -318,7 +318,7 @@ export function DonationFlow({ campaignId, campaignName }: { campaignId: string;
         <CardHeader className="border-b bg-gradient-to-r from-rose-50 to-amber-50/50 pb-4 dark:from-rose-950/20 dark:to-amber-950/10">
           <CardTitle className="flex items-center gap-2 text-lg">
             <CreditCard className="h-5 w-5 text-rose-600" />
-            Pagamento MB WAY
+            Pagamento seguro em EUR
           </CardTitle>
           <CardDescription>Complete o pagamento na janela abaixo. O apoio só é confirmado após validação.</CardDescription>
         </CardHeader>

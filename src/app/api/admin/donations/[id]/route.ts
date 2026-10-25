@@ -4,6 +4,7 @@ import { db } from '@/lib/db'
 import { json, badRequest, unauthorized, notFound } from '@/lib/api'
 import { requireAdmin, clientIp } from '@/lib/auth'
 import { audit } from '@/lib/audit'
+import { sendThankYouEmail, buildThankYouHtml } from '@/lib/notifications/email'
 
 const patchSchema = z.object({
   // Administrative confirmation. A submitted form is NOT proof of payment.
@@ -29,6 +30,14 @@ export async function PATCH(req: NextRequest, { params }: Params) {
   if (!parsed.success) return badRequest(parsed.error.issues[0]?.message ?? 'Dados inválidos.')
   const d = parsed.data
 
+  // Automated and manual PIX must be verified through their PaymentOrder.
+  // A donation form record is never independent proof of such a payment.
+  if ((d.confirmed === true || d.status === 'confirmed')
+    && existing.paymentMethod !== 'bank_transfer'
+    && existing.paymentMethod !== null) {
+    return badRequest('Confirme este pagamento pela respetiva ordem e fornecedor.')
+  }
+
   const confirmed = d.confirmed ?? existing.confirmed
   const status = d.status ?? (confirmed ? 'confirmed' : existing.status)
 
@@ -50,5 +59,17 @@ export async function PATCH(req: NextRequest, { params }: Params) {
     detail: `status=${updated.status} confirmed=${updated.confirmed}`,
     ip: clientIp(req),
   })
+  if (confirmed && !existing.confirmed && existing.paymentMethod === 'bank_transfer' && updated.donorEmail) {
+    const campaign = await db.campaign.findUnique({ where: { id: updated.campaignId } })
+    await sendThankYouEmail({
+      to: updated.donorEmail,
+      subject: 'Obrigado pelo seu apoio — ' + (campaign?.name ?? 'Um Gesto de Apoio'),
+      html: buildThankYouHtml(campaign?.name ?? 'Um Gesto de Apoio',
+        String(updated.amountMinor ? updated.amountMinor / 100 : updated.amount ?? ''),
+        updated.currency, updated.id),
+      campaignId: updated.campaignId,
+      donationIntentId: updated.id,
+    })
+  }
   return json({ donation: updated })
 }

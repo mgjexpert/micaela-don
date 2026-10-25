@@ -17,7 +17,7 @@ jobs:
       - name: Install locked dependencies
         run: bun install --frozen-lockfile
       - name: Provider reconciliation tests
-        run: node --experimental-strip-types --test tests/misticpay-provider.test.mjs
+        run: node --experimental-strip-types --test tests/*.test.mjs
       - name: Lint
         run: bun run lint
       - name: Build
