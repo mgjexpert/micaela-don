@@ -5,6 +5,7 @@ import { json, badRequest } from '@/lib/api'
 import { clientIp } from '@/lib/auth'
 import { audit } from '@/lib/audit'
 import { createMisticPayPayment } from '@/lib/providers/misticpay'
+import { getCanonicalAppBaseUrl } from '@/lib/payments/urls'
 import { generateInternalReference, validateAmount } from '@/lib/payments/types'
 import { resolveDonationIntentId } from '@/lib/payments/intent'
 
@@ -104,7 +105,7 @@ export async function POST(req: NextRequest) {
   // Call MisticPay API
   try {
     // Never derive a payment webhook destination from a visitor-controlled Origin header.
-    const baseUrl = (process.env.APP_BASE_URL ?? 'https://ajudar.charity').replace(/\/$/, '')
+    const baseUrl = getCanonicalAppBaseUrl()
     const webhookUrl = `${baseUrl}/api/webhooks/misticpay`
 
     const misticpayResponse = await createMisticPayPayment({

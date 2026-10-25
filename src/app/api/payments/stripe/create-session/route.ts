@@ -5,6 +5,7 @@ import { json, badRequest } from '@/lib/api'
 import { clientIp } from '@/lib/auth'
 import { audit } from '@/lib/audit'
 import { createCheckoutSession } from '@/lib/providers/stripe'
+import { getCanonicalAppBaseUrl } from '@/lib/payments/urls'
 import { resolveDonationIntentId } from '@/lib/payments/intent'
 import {
   generateInternalReference,
@@ -100,7 +101,7 @@ export async function POST(req: NextRequest) {
   // 4) Create Stripe Checkout Session (embedded mode)
   try {
     // Canonical server-configured origin, not the request's Origin header.
-    const baseUrl = (process.env.APP_BASE_URL ?? 'https://ajudar.charity').replace(/\/$/, '')
+    const baseUrl = getCanonicalAppBaseUrl()
     const { sessionId, clientSecret } = await createCheckoutSession({
       internalReference,
       amount: d.amount,

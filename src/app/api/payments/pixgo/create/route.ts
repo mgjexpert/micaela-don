@@ -5,6 +5,7 @@ import { json, badRequest } from '@/lib/api'
 import { clientIp } from '@/lib/auth'
 import { audit } from '@/lib/audit'
 import { createPixGoPayment } from '@/lib/providers/pixgo'
+import { getCanonicalAppBaseUrl } from '@/lib/payments/urls'
 import { resolveDonationIntentId } from '@/lib/payments/intent'
 import {
   generateInternalReference,
@@ -120,7 +121,7 @@ export async function POST(req: NextRequest) {
 
   // 4) Call PixGo API
   try {
-    const baseUrl = (process.env.APP_BASE_URL ?? 'https://ajudar.charity').replace(/\/$/, '')
+    const baseUrl = getCanonicalAppBaseUrl()
     const webhookUrl = `${baseUrl}/api/webhooks/pixgo`
 
     const pixgoResponse = await createPixGoPayment({

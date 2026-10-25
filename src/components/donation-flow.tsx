@@ -825,6 +825,25 @@ function SummaryRow({ label, value }: { label: string; value: string }) {
   )
 }
 
+function usePaymentStatus(reference: string): 'pending' | 'paid' | 'failed' | 'refunded' {
+  const [state, setState] = useState<'pending' | 'paid' | 'failed' | 'refunded'>('pending')
+  useEffect(() => {
+    let active = true
+    const refresh = async () => {
+      try {
+        const response = await fetch('/api/public/payment-status?ref=' + encodeURIComponent(reference), { cache: 'no-store' })
+        if (!response.ok) return
+        const data = await response.json()
+        if (active && ['pending', 'paid', 'failed', 'refunded'].includes(data.status)) setState(data.status)
+      } catch { /* transient failures do not discard the last observed state */ }
+    }
+    void refresh()
+    const timer = window.setInterval(refresh, 10000)
+    return () => { active = false; window.clearInterval(timer) }
+  }, [reference])
+  return state
+}
+
 function ManualPaymentResult({
   result, methods, paymentMethod, campaignName, campaignId,
 }: {
@@ -835,6 +854,7 @@ function ManualPaymentResult({
   campaignId: string
 }) {
   const [copied, setCopied] = useState(false)
+  const paymentStatus = usePaymentStatus(result.id)
   const bank = methods?.methods.bank_transfer
   const pix = methods?.methods.pix_manual
 
@@ -857,7 +877,7 @@ function ManualPaymentResult({
         <div className="mx-auto mb-3 flex h-14 w-14 items-center justify-center rounded-full bg-emerald-100 dark:bg-emerald-950/40">
           <Check className="h-8 w-8 text-emerald-600" />
         </div>
-        <CardTitle className="text-xl">Intenção registada</CardTitle>
+        <CardTitle className="text-xl">{paymentStatus === 'paid' ? 'Pagamento confirmado' : 'Intenção registada'}</CardTitle>
         <CardDescription>
           Recebemos a sua intenção de apoio a <strong>{campaignName}</strong>.
           A confirmação é administrativa — este registo não comprova pagamento.
@@ -911,6 +931,7 @@ function CopyRow({ label, value, mono, onCopy, copied }: { label: string; value:
 
 function PixGoPaymentResult({ result, campaignName }: { result: { id: string; paymentMethod: string; qrCodeImage?: string; qrCode?: string }; campaignName: string }) {
   const [copied, setCopied] = useState(false)
+  const paymentStatus = usePaymentStatus(result.id)
   const image = result.qrCodeImage?.startsWith('/9j/')
     ? `data:image/jpeg;base64,${result.qrCodeImage}` : result.qrCodeImage
   const code = result.qrCode
@@ -934,7 +955,7 @@ function PixGoPaymentResult({ result, campaignName }: { result: { id: string; pa
         <div className="mx-auto mb-3 flex h-14 w-14 items-center justify-center rounded-full bg-emerald-100 dark:bg-emerald-950/40">
           <QrCode className="h-8 w-8 text-emerald-600" />
         </div>
-        <CardTitle className="text-xl">PIX Automático</CardTitle>
+        <CardTitle className="text-xl">{paymentStatus === 'paid' ? 'Pagamento confirmado' : 'PIX Automático'}</CardTitle>
         <CardDescription>
           {campaignName} — Pague com o seu app de banco
         </CardDescription>
@@ -962,7 +983,7 @@ function PixGoPaymentResult({ result, campaignName }: { result: { id: string; pa
           </div>
         )}
         <div className="rounded-lg bg-amber-50 p-3 text-xs text-amber-800 dark:bg-amber-950/30 dark:text-amber-200">
-          <AlertCircle className="mb-1 h-3.5 w-3.5" /> O pagamento aguarda confirmação automática.
+          <AlertCircle className="mb-1 h-3.5 w-3.5" /> {paymentStatus === 'paid' ? 'Pagamento confirmado pelo fornecedor. Obrigado pelo apoio.' : paymentStatus === 'failed' ? 'O pagamento falhou. Inicie um novo pedido.' : paymentStatus === 'refunded' ? 'Pagamento reembolsado.' : 'O pagamento aguarda confirmação automática.'}
         </div>
         <div className="rounded-lg bg-muted/50 p-3 text-xs text-muted-foreground">
           <p>Referência: <code className="font-mono">{result.id.slice(0, 16)}</code></p>
