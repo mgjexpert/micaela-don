@@ -15,10 +15,10 @@ Other changes: parse nested create/check API responses; support numeric transact
 - Verify duplicate callbacks, pending state, wrong-amount rejection, refund handling, email idempotency, and server logs without leaking personal/payment secrets.
 - Confirm Stripe dashboard sends `checkout.session.completed`, `checkout.session.async_payment_succeeded`, and `checkout.session.async_payment_failed`.
 
-## Important remaining follow-up
-1. Associate `DonationIntent` to `PaymentOrder` for automatic methods.
-2. Make email idempotency truly order-scoped (`orderId` rather than nullable `donationIntentId`), and ensure transactional receipts are not marketed as promotional consent.
-3. Implement and verify digital Pack Media fulfillment before enabling it.
-4. Verify Prisma ↔ Supabase migrations and replace unsafe fallback schema writes.
+## Current implementation after the global release-candidate follow-up
+1. `DonationIntent` is now linked to `PaymentOrder` by matching the campaign, method, currency and amount.
+2. Thank-you emails have a deterministic, order-scoped primary key. Transactional receipts and promotional consent are separate.
+3. Pack Media is now available in source code: generated SVG/TXT, approved published campaign materials, private 7-day links, admin recovery and payment-state checks. See `docs/pack-media.md`.
+4. Still required: real-provider payment tests, Vercel deployment access, real DB migration verification, sender-domain validation and end-to-end smoke testing.
 
 The fork/PR does **not** automatically deploy to `ajudar.charity`; source production is independently controlled.
