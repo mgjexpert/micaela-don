@@ -107,7 +107,7 @@ export async function POST(req: NextRequest) {
   try {
     // Never derive a payment webhook destination from a visitor-controlled Origin header.
     const baseUrl = getCanonicalAppBaseUrl()
-    const webhookUrl = `${baseUrl}/api/webhooks/misticpay`
+    const webhookUrl = `${baseUrl}/api/webhook/misticpay`
 
     const misticpayResponse = await createMisticPayPayment({
       amount: d.amount,
