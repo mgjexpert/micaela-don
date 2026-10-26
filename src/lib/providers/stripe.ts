@@ -43,24 +43,24 @@ export type CreateSessionParams = {
   campaignName: string
   customerEmail: string
   returnUrl: string
+  cancelUrl: string
   metadata?: Record<string, string>
 }
 
 /**
- * Creates a Stripe Checkout Session in EMBEDDED mode.
- * The session returns a client_secret which the client uses to mount the
- * checkout iframe inline (no redirect).
+ * Creates a Stripe-hosted Checkout Session. The server returns only the
+ * HTTPS Checkout URL; no Stripe.js iframe or public key is required.
  */
 export async function createCheckoutSession(params: CreateSessionParams): Promise<{
   sessionId: string
-  clientSecret: string
+  checkoutUrl: string
 }> {
   const stripe = getStripe()
   const amountInSmallestUnit = Math.round(params.amount * 100)
 
   const session = await stripe.checkout.sessions.create({
     mode: 'payment',
-    ui_mode: 'embedded',
+    ui_mode: 'hosted',
     line_items: [
       {
         quantity: 1,
@@ -82,18 +82,15 @@ export async function createCheckoutSession(params: CreateSessionParams): Promis
       campaign_name: params.campaignName,
       ...params.metadata,
     },
-    return_url: params.returnUrl,
+    success_url: params.returnUrl,
+    cancel_url: params.cancelUrl,
     locale: 'pt',
   })
 
-  if (!session.client_secret) {
-    throw new Error('Stripe não devolveu client_secret.')
+  if (!session.url || !session.url.startsWith('https://')) {
+    throw new Error('Stripe não devolveu um URL de checkout válido.')
   }
-
-  return {
-    sessionId: session.id,
-    clientSecret: session.client_secret,
-  }
+  return { sessionId: session.id, checkoutUrl: session.url }
 }
 
 /**

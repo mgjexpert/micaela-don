@@ -99,17 +99,18 @@ export async function POST(req: NextRequest) {
     ip,
   })
 
-  // 4) Create Stripe Checkout Session (embedded mode)
+  // 4) Create Stripe-hosted Checkout Session
   try {
     // Canonical server-configured origin, not the request's Origin header.
     const baseUrl = getCanonicalAppBaseUrl()
-    const { sessionId, clientSecret } = await createCheckoutSession({
+    const { sessionId, checkoutUrl } = await createCheckoutSession({
       internalReference,
       amount: d.amount,
       currency: d.currency,
       campaignName: campaign.name,
       customerEmail: d.customerEmail,
       returnUrl: `${baseUrl}/pagamento/sucesso?ref=${encodeURIComponent(internalReference)}`,
+      cancelUrl: `${baseUrl}/pagamento/cancelado?ref=${encodeURIComponent(internalReference)}`,
       metadata: {
         campaign_id: campaign.id,
         order_id: order.id,
@@ -122,15 +123,15 @@ export async function POST(req: NextRequest) {
       data: { externalId: sessionId, status: 'processing' },
     })
 
-    return json({ clientSecret, reference: internalReference, orderId: order.id })
+    return json({ checkoutUrl, reference: internalReference, orderId: order.id })
   } catch (e) {
     // Mark order as failed
     await db.paymentOrder.update({
       where: { id: order.id },
       data: { status: 'failed' },
     })
-    const msg = e instanceof Error ? e.message : 'Erro ao criar sessão de pagamento.'
-    // Don't expose internal details
+    console.error('[stripe] Checkout creation failed:', e instanceof Error ? e.message : 'unknown error')
+    // Don't expose credentials or other internal details
     return badRequest('Não foi possível iniciar o pagamento. Tente novamente.')
   }
 }

@@ -1,6 +1,6 @@
 'use client'
 
-import { useState, useEffect, useMemo, useRef } from 'react'
+import { useState, useEffect, useMemo } from 'react'
 import { toast } from 'sonner'
 import {
   Heart,
@@ -85,9 +85,6 @@ export function DonationFlow({ campaignId, campaignName }: { campaignId: string;
   const [message, setMessage] = useState('')
   const [submitting, setSubmitting] = useState(false)
   const [result, setResult] = useState<{ id: string; paymentMethod: string; qrCodeImage?: string; qrCode?: string } | null>(null)
-  const [stripeClientSecret, setStripeClientSecret] = useState<string | null>(null)
-  const [stripeLoading, setStripeLoading] = useState(false)
-  const checkoutRef = useRef<{ destroy: () => void } | null>(null)
 
   useEffect(() => {
     fetch(`/api/public/payment-methods?campaignId=${encodeURIComponent(campaignId)}`)
@@ -96,46 +93,6 @@ export function DonationFlow({ campaignId, campaignName }: { campaignId: string;
       .catch(() => {})
       .finally(() => setLoadingMethods(false))
   }, [campaignId])
-
-  // Cleanup: destroy Stripe embedded checkout when component unmounts
-  useEffect(() => {
-    return () => {
-      if (checkoutRef.current) {
-        checkoutRef.current.destroy()
-        checkoutRef.current = null
-      }
-    }
-  }, [])
-
-  // Mount embedded Checkout only after React has rendered its container.
-  useEffect(() => {
-    if (!stripeClientSecret) return
-    let cancelled = false
-    setStripeLoading(true)
-    const mount = async () => {
-      try {
-        const key = process.env.NEXT_PUBLIC_STRIPE_PUBLISHABLE_KEY
-        if (!key) throw new Error('Stripe não configurado no frontend.')
-        const stripe = await loadStripeScript(key)
-        if (!stripe) throw new Error('Falha a carregar Stripe.js.')
-        if (cancelled) return
-        const checkout = await stripe.initEmbeddedCheckout({ clientSecret: stripeClientSecret })
-        if (cancelled) { checkout.destroy(); return }
-        checkout.mount('#stripe-checkout-container')
-        checkoutRef.current = checkout
-      } catch {
-        if (!cancelled) toast.error('Não foi possível apresentar o pagamento. Tente novamente.')
-      } finally {
-        if (!cancelled) setStripeLoading(false)
-      }
-    }
-    void mount()
-    return () => {
-      cancelled = true
-      checkoutRef.current?.destroy()
-      checkoutRef.current = null
-    }
-  }, [stripeClientSecret])
 
   // Auto-suggest country from Accept-Language (no geolocation)
   useEffect(() => {
@@ -211,7 +168,7 @@ export function DonationFlow({ campaignId, campaignName }: { campaignId: string;
       const data = await res.json()
       if (!res.ok) throw new Error(data?.error ?? 'Erro')
 
-      // If Stripe MB WAY, create embedded checkout session
+      // EUR: redirect to Stripe-hosted checkout (more reliable than an iframe)
       if (paymentMethod === 'mbway') {
         const stripeRes = await fetch('/api/payments/stripe/create-session', {
           method: 'POST',
@@ -226,10 +183,15 @@ export function DonationFlow({ campaignId, campaignName }: { campaignId: string;
           }),
         })
         const stripeData = await stripeRes.json()
-        if (!stripeRes.ok || !stripeData.clientSecret) {
+        if (!stripeRes.ok || !stripeData.checkoutUrl) {
           throw new Error(stripeData?.error ?? 'Não foi possível iniciar o checkout Stripe.')
         }
-        setStripeClientSecret(stripeData.clientSecret)
+        const checkout = new URL(stripeData.checkoutUrl)
+        if (checkout.protocol !== 'https:' ||
+          (checkout.hostname !== 'checkout.stripe.com' && !checkout.hostname.endsWith('.stripe.com'))) {
+          throw new Error('O fornecedor devolveu um endereço de pagamento inesperado.')
+        }
+        window.location.assign(checkout.toString())
         return
       }
 
@@ -312,32 +274,9 @@ export function DonationFlow({ campaignId, campaignName }: { campaignId: string;
     )
   }
 
-  // Stripe embedded checkout — show inline iframe
-  if (stripeClientSecret) {
-    return (
-      <Card className="overflow-hidden border-stone-200/70 shadow-sm dark:border-stone-800/70">
-        <CardHeader className="border-b bg-gradient-to-r from-rose-50 to-amber-50/50 pb-4 dark:from-rose-950/20 dark:to-amber-950/10">
-          <CardTitle className="flex items-center gap-2 text-lg">
-            <CreditCard className="h-5 w-5 text-rose-600" />
-            Pagamento seguro em EUR
-          </CardTitle>
-          <CardDescription>Complete o pagamento na janela abaixo. O apoio só é confirmado após validação.</CardDescription>
-        </CardHeader>
-        <CardContent className="p-0">
-          {stripeLoading && (
-            <div className="flex items-center justify-center p-12 text-muted-foreground">
-              <Loader2 className="mr-2 h-5 w-5 animate-spin" /> A carregar o checkout seguro…
-            </div>
-          )}
-          <div id="stripe-checkout-container" className="min-h-[400px]" />
-        </CardContent>
-      </Card>
-    )
-  }
-
   // PixGo PIX automatic — show QR inline
   if (result && result.paymentMethod === 'pix_automatic') {
-    return <PixGoPaymentResult result={result} campaignName={campaignName} />
+    return <PixGoPaymentResult result={result} campaignName={campaignName} wantPackMedia={wantPackMedia} />
   }
 
   if (result && (result.paymentMethod === 'pix_manual' || result.paymentMethod === 'bank_transfer')) {
@@ -930,7 +869,7 @@ function CopyRow({ label, value, mono, onCopy, copied }: { label: string; value:
   )
 }
 
-function PixGoPaymentResult({ result, campaignName }: { result: { id: string; paymentMethod: string; qrCodeImage?: string; qrCode?: string }; campaignName: string }) {
+function PixGoPaymentResult({ result, campaignName, wantPackMedia }: { result: { id: string; paymentMethod: string; qrCodeImage?: string; qrCode?: string }; campaignName: string; wantPackMedia: boolean }) {
   const [copied, setCopied] = useState(false)
   const paymentStatus = usePaymentStatus(result.id)
   const image = result.qrCodeImage?.startsWith('/9j/')
@@ -948,6 +887,25 @@ function PixGoPaymentResult({ result, campaignName }: { result: { id: string; pa
         toast.error('Não foi possível copiar')
       }
     }
+  }
+
+  if (paymentStatus === 'paid') {
+    return (
+      <Card className="border-emerald-200 dark:border-emerald-900">
+        <CardHeader className="text-center">
+          <Check className="mx-auto h-12 w-12 text-emerald-600" />
+          <CardTitle>Pagamento PIX confirmado!</CardTitle>
+          <CardDescription>O pagamento foi validado junto do fornecedor.</CardDescription>
+        </CardHeader>
+        <CardContent className="space-y-3 text-center">
+          <p className="text-sm">{wantPackMedia
+            ? 'O link do Pack Media e o agradecimento serão enviados para o e-mail indicado.'
+            : 'O agradecimento será enviado para o e-mail indicado.'}</p>
+          <p className="text-xs text-muted-foreground">Se não receber o e-mail, contacte o responsável pela campanha com a referência do pagamento.</p>
+          <p className="font-mono text-xs break-all">{result.id}</p>
+        </CardContent>
+      </Card>
+    )
   }
 
   return (
@@ -972,62 +930,25 @@ function PixGoPaymentResult({ result, campaignName }: { result: { id: string; pa
             <p className="text-xs text-muted-foreground">Leia o QR Code com a sua app de banco para pagar.</p>
           </div>
         )}
-        {code && (
-          <div className="space-y-2">
-            <Label>PIX Copia e Cola</Label>
-            <div className="flex items-center gap-2">
-              <Input value={code} readOnly className="font-mono text-xs" />
-              <Button variant="outline" size="sm" onClick={copy} className="shrink-0">
-                {copied ? <Check className="h-3.5 w-3.5 text-emerald-600" /> : <Copy className="h-3.5 w-3.5" />}
-              </Button>
-            </div>
+        <div className="space-y-2">
+          <Label htmlFor="pix-copia-cola">PIX Copia e Cola</Label>
+          <div className="flex items-center gap-2">
+            <Input id="pix-copia-cola" value={code ?? ''} readOnly className="font-mono text-xs"
+              placeholder="Código indisponível nesta cobrança" />
+            <Button variant="outline" size="sm" onClick={copy} disabled={!code} className="shrink-0">
+              {copied ? <Check className="h-3.5 w-3.5 text-emerald-600" /> : <Copy className="h-3.5 w-3.5" />}
+              <span className="ml-1">Copiar</span>
+            </Button>
           </div>
-        )}
+          {!code && <p className="text-xs text-amber-700">O fornecedor não disponibilizou o código Copia e Cola. Não efetue outro pagamento; contacte o suporte.</p>}
+        </div>
         <div className="rounded-lg bg-amber-50 p-3 text-xs text-amber-800 dark:bg-amber-950/30 dark:text-amber-200">
           <AlertCircle className="mb-1 h-3.5 w-3.5" /> {paymentStatus === 'paid' ? 'Pagamento confirmado pelo fornecedor. Obrigado pelo apoio.' : paymentStatus === 'failed' ? 'O pagamento falhou. Inicie um novo pedido.' : paymentStatus === 'refunded' ? 'Pagamento reembolsado.' : 'O pagamento aguarda confirmação automática.'}
         </div>
         <div className="rounded-lg bg-muted/50 p-3 text-xs text-muted-foreground">
-          <p>Referência: <code className="font-mono">{result.id.slice(0, 16)}</code></p>
+          <p>Referência: <code className="break-all font-mono">{result.id}</code></p>
         </div>
       </CardContent>
     </Card>
   )
-}
-
-/**
- * Loads Stripe.js dynamically via script tag (official approach, no npm dependency).
- * Returns the Stripe object or null on failure.
- */
-type StripeInstance = {
-  initEmbeddedCheckout: (opts: { clientSecret: string }) => Promise<{
-    mount: (selector: string) => void
-    destroy: () => void
-  }>
-}
-
-function loadStripeScript(publishableKey: string): Promise<StripeInstance | null> {
-  return new Promise((resolve) => {
-    if (typeof window === 'undefined') {
-      resolve(null)
-      return
-    }
-    const w = window as unknown as { Stripe?: (pk: string) => unknown }
-    // If already loaded, return existing instance
-    if (w.Stripe) {
-      resolve(w.Stripe(publishableKey) as unknown as StripeInstance)
-      return
-    }
-    const script = document.createElement('script')
-    script.src = 'https://js.stripe.com/v3/'
-    script.async = true
-    script.onload = () => {
-      if (w.Stripe) {
-        resolve(w.Stripe(publishableKey) as unknown as StripeInstance)
-      } else {
-        resolve(null)
-      }
-    }
-    script.onerror = () => resolve(null)
-    document.head.appendChild(script)
-  })
 }
