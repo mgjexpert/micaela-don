@@ -914,7 +914,7 @@ function PixGoPaymentResult({ result, campaignName, wantPackMedia }: { result: {
         <div className="mx-auto mb-3 flex h-14 w-14 items-center justify-center rounded-full bg-emerald-100 dark:bg-emerald-950/40">
           <QrCode className="h-8 w-8 text-emerald-600" />
         </div>
-        <CardTitle className="text-xl">{paymentStatus === 'paid' ? 'Pagamento confirmado' : 'PIX Automático'}</CardTitle>
+        <CardTitle className="text-xl">PIX Automático</CardTitle>
         <CardDescription>
           {campaignName} — Pague com o seu app de banco
         </CardDescription>
@@ -943,7 +943,7 @@ function PixGoPaymentResult({ result, campaignName, wantPackMedia }: { result: {
           {!code && <p className="text-xs text-amber-700">O fornecedor não disponibilizou o código Copia e Cola. Não efetue outro pagamento; contacte o suporte.</p>}
         </div>
         <div className="rounded-lg bg-amber-50 p-3 text-xs text-amber-800 dark:bg-amber-950/30 dark:text-amber-200">
-          <AlertCircle className="mb-1 h-3.5 w-3.5" /> {paymentStatus === 'paid' ? 'Pagamento confirmado pelo fornecedor. Obrigado pelo apoio.' : paymentStatus === 'failed' ? 'O pagamento falhou. Inicie um novo pedido.' : paymentStatus === 'refunded' ? 'Pagamento reembolsado.' : 'O pagamento aguarda confirmação automática.'}
+          <AlertCircle className="mb-1 h-3.5 w-3.5" /> {paymentStatus === 'failed' ? 'O pagamento falhou. Não repita sem confirmar com o banco.' : paymentStatus === 'refunded' ? 'Pagamento reembolsado.' : 'O pagamento aguarda confirmação automática. Se já pagou, aguarde a consulta ao fornecedor.'}
         </div>
         <div className="rounded-lg bg-muted/50 p-3 text-xs text-muted-foreground">
           <p>Referência: <code className="break-all font-mono">{result.id}</code></p>
