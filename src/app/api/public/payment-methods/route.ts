@@ -17,7 +17,6 @@ export async function GET(req: NextRequest) {
   try { canonicalConfigured = !!getCanonicalAppBaseUrl() } catch { /* no automatic checkout */ }
   const stripeConfigured = canonicalConfigured
     && !!process.env.STRIPE_SECRET_KEY && !!process.env.STRIPE_WEBHOOK_SECRET
-    && !!process.env.NEXT_PUBLIC_STRIPE_PUBLISHABLE_KEY
   const pixgoConfigured = canonicalConfigured && !!process.env.PIXGO_API_KEY
     && !!process.env.PIXGO_WEBHOOK_SECRET && process.env.ENABLE_PIXGO === 'true'
   const misticpayConfigured = canonicalConfigured

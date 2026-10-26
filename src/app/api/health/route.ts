@@ -13,7 +13,6 @@ export async function GET() {
     })
     const stripe = !!process.env.STRIPE_SECRET_KEY
       && !!process.env.STRIPE_WEBHOOK_SECRET
-      && !!process.env.NEXT_PUBLIC_STRIPE_PUBLISHABLE_KEY
     const misticpay = !!process.env.MISTICPAY_CLIENT_ID
       && !!process.env.MISTICPAY_CLIENT_SECRET
     const manual = !!(await db.pixConfig.findFirst({
