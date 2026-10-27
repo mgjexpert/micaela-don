@@ -13,7 +13,7 @@ const geistMono = Geist_Mono({
   subsets: ["latin"],
 });
 
-const siteUrl = (process.env.APP_BASE_URL ?? "https://ajudar.charity").replace(/\\/$/, "");
+const siteUrl = (process.env.APP_BASE_URL ?? "https://ajudar.charity").replace(/\/$/, "");
 const campaignUrl = siteUrl + "/micaela";
 
 export const metadata: Metadata = {
