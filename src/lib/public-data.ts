@@ -59,6 +59,10 @@ function resolveImageRef(ref: string | null | undefined): string | null {
 
 type RawRow = Record<string, unknown>
 
+function field(row: RawRow, camel: string, snake: string): unknown {
+  return row[camel] ?? row[snake]
+}
+
 /**
  * Try Prisma query; if it fails (missing columns), fall back to raw SQL selecting
  * only the columns that exist in the ORIGINAL (pre-migration) schema.
@@ -88,14 +92,33 @@ async function resilientQuery<T>(
  */
 export async function getPublicSite(_campaignId: string = 'micaela'): Promise<PublicSite> {
   try {
+    const campaign = await db.campaign.findUnique({
+      where: { id: _campaignId },
+      select: {
+        id: true, slug: true, name: true, currency: true, country: true,
+        seoTitle: true, seoDescription: true, canonicalUrl: true, status: true,
+      },
+    })
+    if (!campaign || campaign.status !== 'published') return EMPTY_PUBLIC_SITE
+
+    // Legacy SQL fallbacks are only permitted for the original Micaela campaign.
+    // Never read another campaign's settings, bank details, or materials on schema errors.
+    const scopedQuery = <T,>(
+      primary: () => Promise<T>,
+      fallback: () => Promise<T>,
+    ): Promise<T> => resilientQuery(primary, () => {
+      if (_campaignId !== 'micaela') throw new Error('Esquema multicampanha incompleto.')
+      return fallback()
+    })
+
     // Try Prisma (typed); fallback to raw SQL (original schema columns only).
-    const settings = await resilientQuery(
+    const settings = await scopedQuery(
       () => db.siteSetting.findMany({ where: { campaignId: _campaignId } }),
       () => db.siteSetting.findMany().catch(async () =>
         db.$queryRawUnsafe('SELECT key, value FROM site_setting') as Promise<RawRow[]>,
       ),
     )
-    const payment = await resilientQuery(
+    const payment = await scopedQuery(
       () => db.paymentConfig.findFirst({ where: { campaignId: _campaignId }, orderBy: { updatedAt: 'desc' } }),
       () => db.paymentConfig.findFirst({ orderBy: { updatedAt: 'desc' } }).catch(async () => {
         const rows = await db.$queryRawUnsafe(
@@ -104,7 +127,7 @@ export async function getPublicSite(_campaignId: string = 'micaela'): Promise<Pu
         return rows[0] ?? null
       }),
     )
-    const pix = await resilientQuery(
+    const pix = await scopedQuery(
       () => db.pixConfig.findFirst({ where: { campaignId: _campaignId }, orderBy: { updatedAt: 'desc' } }),
       () => db.pixConfig.findFirst({ orderBy: { updatedAt: 'desc' } }).catch(async () => {
         const rows = await db.$queryRawUnsafe(
@@ -113,7 +136,7 @@ export async function getPublicSite(_campaignId: string = 'micaela'): Promise<Pu
         return rows[0] ?? null
       }),
     )
-    const materials = await resilientQuery(
+    const materials = await scopedQuery(
       () => db.campaignMaterial.findMany({ where: { campaignId: _campaignId, approved: true, published: true }, orderBy: { createdAt: 'desc' } }),
       () => db.campaignMaterial.findMany({ where: { approved: true, published: true }, orderBy: { createdAt: 'desc' } }).catch(async () =>
         db.$queryRawUnsafe(
@@ -121,7 +144,7 @@ export async function getPublicSite(_campaignId: string = 'micaela'): Promise<Pu
         ) as Promise<RawRow[]>,
       ),
     )
-    const channels = await resilientQuery(
+    const channels = await scopedQuery(
       () => db.contactChannel.findMany({ where: { campaignId: _campaignId, enabled: true, published: true } }),
       () => db.contactChannel.findMany({ where: { enabled: true, published: true } }).catch(async () =>
         db.$queryRawUnsafe(
@@ -143,7 +166,7 @@ export async function getPublicSite(_campaignId: string = 'micaela'): Promise<Pu
     const showPayment = !!paymentRow && paymentRow.published === true && paymentRow.approved === true
 
     const pixRow = pix as RawRow | null
-    const showPix = !!pixRow && pixRow.published === true && pixRow.approved === true && !!pixRow.qr_image_data
+    const showPix = !!pixRow && pixRow.published === true && pixRow.approved === true && !!field(pixRow, 'qrImageData', 'qr_image_data')
 
     const hero = {
       layout: settingsMap['hero.layout'] ?? 'none',
@@ -156,7 +179,7 @@ export async function getPublicSite(_campaignId: string = 'micaela'): Promise<Pu
     }
 
     return {
-      campaign: { id: 'micaela', slug: 'micaela', name: 'A história da Micaela', currency: 'EUR', country: 'PT', seoTitle: null, seoDescription: null, canonicalUrl: null },
+      campaign: { id: campaign.id, slug: campaign.slug, name: campaign.name, currency: campaign.currency, country: campaign.country, seoTitle: campaign.seoTitle, seoDescription: campaign.seoDescription, canonicalUrl: campaign.canonicalUrl },
       settings: settingsMap,
       hero,
       payment: showPayment
@@ -174,7 +197,7 @@ export async function getPublicSite(_campaignId: string = 'micaela'): Promise<Pu
         : { approved: false, published: false, exists: false },
       pix: {
         available: showPix,
-        beneficiaryName: showPix ? (pixRow!.beneficiary_name as string | null) ?? null : null,
+        beneficiaryName: showPix ? (field(pixRow!, 'beneficiaryName', 'beneficiary_name') as string | null) ?? null : null,
         qrUrl: showPix ? '/api/public/pix-qr' : null,
       },
       materials: (materials as RawRow[]).map((m) => ({
@@ -184,8 +207,8 @@ export async function getPublicSite(_campaignId: string = 'micaela'): Promise<Pu
         type: String(m.type ?? ''),
         url: String(m.url ?? ''),
         source: String(m.source ?? 'google_drive'),
-        coverImage: resolveImageRef((m.cover_image_ref ?? null) as string | null),
-        coverAlt: (m.cover_alt as string | null) ?? null,
+        coverImage: resolveImageRef(field(m, 'coverImageRef', 'cover_image_ref') as string | null),
+        coverAlt: (field(m, 'coverAlt', 'cover_alt') as string | null) ?? null,
         description: (m.description as string | null) ?? null,
       })),
       contactChannels: (channels as RawRow[]).map((c) => ({
@@ -213,7 +236,7 @@ export async function getCampaignIdBySlug(slug: string): Promise<string | null> 
     if (!campaign || campaign.status !== 'published') return null
     return campaign.id
   } catch {
-    return slug === 'micaela' ? 'micaela' : null
+    return null
   }
 }
 
