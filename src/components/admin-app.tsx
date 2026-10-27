@@ -46,8 +46,9 @@ import {
   DialogTitle,
 } from '@/components/ui/dialog'
 import { apiFetch } from '@/lib/admin-client'
+import { AdminPayments } from '@/components/admin-payments'
 
-type Tab = 'site' | 'payment' | 'pix' | 'materials' | 'donations' | 'templates' | 'channels' | 'audit'
+type Tab = 'site' | 'payment' | 'pix' | 'materials' | 'donations' | 'payments' | 'templates' | 'channels' | 'audit'
 
 export function AdminApp({ onClose }: { onClose: () => void }) {
   const [authed, setAuthed] = useState<boolean | null>(null)
@@ -101,12 +102,13 @@ export function AdminApp({ onClose }: { onClose: () => void }) {
         ) : (
           <div className="mx-auto max-w-5xl p-4 sm:p-6">
             <Tabs value={tab} onValueChange={(v) => setTab(v as Tab)} className="w-full">
-              <TabsList className="grid w-full grid-cols-2 sm:grid-cols-4 lg:grid-cols-8">
+              <TabsList className="grid w-full grid-cols-2 sm:grid-cols-4 lg:grid-cols-9">
                 <TabsTrigger value="site" className="gap-1"><LayoutDashboard className="h-3.5 w-3.5" /> Site</TabsTrigger>
                 <TabsTrigger value="payment" className="gap-1"><Landmark className="h-3.5 w-3.5" /> EUR</TabsTrigger>
                 <TabsTrigger value="pix" className="gap-1"><QrCode className="h-3.5 w-3.5" /> PIX</TabsTrigger>
                 <TabsTrigger value="materials" className="gap-1"><FolderKanban className="h-3.5 w-3.5" /> Materiais</TabsTrigger>
                 <TabsTrigger value="donations" className="gap-1"><HandCoins className="h-3.5 w-3.5" /> Donativos</TabsTrigger>
+                <TabsTrigger value="payments" className="gap-1"><ShieldCheck className="h-3.5 w-3.5" /> Pagamentos</TabsTrigger>
                 <TabsTrigger value="templates" className="gap-1"><MessageSquareHeart className="h-3.5 w-3.5" /> Modelos</TabsTrigger>
                 <TabsTrigger value="channels" className="gap-1"><Mail className="h-3.5 w-3.5" /> Canais</TabsTrigger>
                 <TabsTrigger value="audit" className="gap-1"><ScrollText className="h-3.5 w-3.5" /> Auditoria</TabsTrigger>
@@ -117,6 +119,7 @@ export function AdminApp({ onClose }: { onClose: () => void }) {
               <TabsContent value="pix" className="mt-6"><PixTab /></TabsContent>
               <TabsContent value="materials" className="mt-6"><MaterialsTab /></TabsContent>
               <TabsContent value="donations" className="mt-6"><DonationsTab /></TabsContent>
+              <TabsContent value="payments" className="mt-6"><AdminPayments /></TabsContent>
               <TabsContent value="templates" className="mt-6"><TemplatesTab /></TabsContent>
               <TabsContent value="channels" className="mt-6"><ChannelsTab /></TabsContent>
               <TabsContent value="audit" className="mt-6"><AuditTab /></TabsContent>
