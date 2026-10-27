@@ -13,7 +13,8 @@ const geistMono = Geist_Mono({
   subsets: ["latin"],
 });
 
-const siteUrl = process.env.APP_BASE_URL ?? "https://ajudar.charity";
+const siteUrl = (process.env.APP_BASE_URL ?? "https://ajudar.charity").replace(/\\/$/, "");
+const campaignUrl = siteUrl + "/micaela";
 
 export const metadata: Metadata = {
   metadataBase: new URL(siteUrl),
@@ -38,7 +39,7 @@ export const metadata: Metadata = {
   openGraph: {
     type: "website",
     locale: "pt_PT",
-    url: siteUrl,
+    url: campaignUrl,
     siteName: "Um Gesto de Apoio — A história da Micaela",
     title: "Um Gesto de Apoio — A história da Micaela",
     description: "Campanha de solidariedade. Cada contribuição é um gesto concreto de cuidado.",
@@ -68,7 +69,7 @@ export const metadata: Metadata = {
     },
   },
   alternates: {
-    canonical: siteUrl,
+    canonical: campaignUrl,
   },
   category: "solidariedade",
 };
