@@ -16,12 +16,14 @@ export async function GET(req: NextRequest) {
   const provider = searchParams.get('provider') ?? undefined
   const method = searchParams.get('method') ?? undefined
   const status = searchParams.get('status') ?? undefined
+  const reference = searchParams.get('reference')?.trim() || undefined
 
   const where: Record<string, string | undefined> = {}
   if (campaignId) where.campaignId = campaignId
   if (provider) where.provider = provider
   if (method) where.method = method
   if (status) where.status = status
+  if (reference) where.internalReference = reference
 
   const orders = await db.paymentOrder.findMany({
     where,
