@@ -4,7 +4,7 @@ import { db } from '@/lib/db'
 import { json, badRequest } from '@/lib/api'
 import { clientIp } from '@/lib/auth'
 import { audit } from '@/lib/audit'
-import { createMisticPayPayment } from '@/lib/providers/misticpay'
+import { createMisticPayPayment, misticPayCredentials } from '@/lib/providers/misticpay'
 import { getCanonicalAppBaseUrl } from '@/lib/payments/urls'
 import { generateInternalReference, validateAmount } from '@/lib/payments/types'
 import { resolveDonationIntentId } from '@/lib/payments/intent'
@@ -44,7 +44,9 @@ export async function POST(req: NextRequest) {
     return badRequest(parsed.error.issues[0]?.message ?? 'Dados inválidos.')
   }
   const d = parsed.data
-  if (!process.env.MISTICPAY_CLIENT_ID || !process.env.MISTICPAY_CLIENT_SECRET) return badRequest('PIX automático indisponível.')
+  const credentials = misticPayCredentials()
+  if (!credentials.configured) return badRequest('PIX indisponível: faltam as credenciais MisticPay na Vercel.')
+  if (credentials.legacy) return badRequest('PIX indisponível: as chaves antigas ci_/cs_ expiraram. Configure uma chave pk_/sk_ da MisticPay com TRANSACTION_CREATE e TRANSACTION_READ.')
   const ip = clientIp(req)
 
   // CPF/CNPJ validation: 11 or 14 digits
@@ -143,9 +145,19 @@ export async function POST(req: NextRequest) {
     })
     const msg = e instanceof Error ? e.message : 'Erro desconhecido'
     // Don't expose internal error details, but give useful feedback
-    if (msg.includes('INVALID_API_CREDENTIAL') || msg.includes('API_CREDENTIAL_REQUIRED')) {
-      return badRequest('Credenciais MisticPay inválidas. Contacte o administrador.')
+    if (msg.includes('INVALID_API_CREDENTIAL') || msg.includes('API_CREDENTIAL_REQUIRED') || msg.includes('LEGACY_CREDENTIALS')) {
+      return badRequest('A MisticPay recusou a autenticação. Confirme as chaves pk_/sk_ atuais na Vercel.')
     }
-    return badRequest('Não foi possível criar o pagamento PIX. Tente novamente.')
+    if (msg.includes('API_SCOPE_DENIED')) {
+      return badRequest('A chave MisticPay não tem a permissão TRANSACTION_CREATE. Corrija os escopos no painel MisticPay.')
+    }
+    if (msg.includes('IP_NOT_ALLOWED')) {
+      return badRequest('A MisticPay bloqueou o IP do servidor. Reveja a lista de IPs autorizados no painel.')
+    }
+    if (msg.includes('VALIDATION_ERROR')) {
+      return badRequest('A MisticPay não aceitou os dados da cobrança. Reveja nome, CPF e valor informado.')
+    }
+    console.error('[misticpay] PIX create failed:', msg.replace(/[^A-Za-z0-9_ -]/g, '').slice(0, 130))
+    return badRequest('Não foi possível gerar o PIX. Verifique a configuração e os registos da MisticPay antes de tentar novamente.')
   }
 }
