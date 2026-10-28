@@ -53,10 +53,21 @@ function numberField(obj: ObjectValue, fields: string[]): number | undefined {
   }
   return undefined
 }
+/** Supports the current pk_/sk_ key pair without breaking existing env names. */
+export function misticPayCredentials(): { configured: boolean; legacy: boolean; ready: boolean } {
+  const id = process.env.MISTICPAY_ACCESS_KEY_ID || process.env.MISTICPAY_CLIENT_ID
+  const secret = process.env.MISTICPAY_ACCESS_KEY_SECRET || process.env.MISTICPAY_CLIENT_SECRET
+  const configured = Boolean(id && secret)
+  const legacy = Boolean(id?.startsWith('ci_') || secret?.startsWith('cs_'))
+  return { configured, legacy, ready: configured && !legacy }
+}
 function authHeader(): string {
-  const id = process.env.MISTICPAY_CLIENT_ID
-  const secret = process.env.MISTICPAY_CLIENT_SECRET
-  if (!id || !secret) throw new Error('MisticPay credentials are not configured')
+  const id = process.env.MISTICPAY_ACCESS_KEY_ID || process.env.MISTICPAY_CLIENT_ID
+  const secret = process.env.MISTICPAY_ACCESS_KEY_SECRET || process.env.MISTICPAY_CLIENT_SECRET
+  if (!id || !secret) throw new Error('MISTICPAY_MISSING_CREDENTIALS')
+  if (id.startsWith('ci_') || secret.startsWith('cs_')) {
+    throw new Error('MISTICPAY_LEGACY_CREDENTIALS')
+  }
   return `Basic ${Buffer.from(`${id}:${secret}`).toString('base64')}`
 }
 async function post(path: string, payload: ObjectValue): Promise<unknown> {
@@ -67,7 +78,16 @@ async function post(path: string, payload: ObjectValue): Promise<unknown> {
     cache: 'no-store',
     signal: AbortSignal.timeout(10000),
   })
-  if (!response.ok) throw new Error(`MisticPay API request failed HTTP ${response.status}`)
+  if (!response.ok) {
+    let code = ''
+    try {
+      const body = await response.json() as { code?: unknown }
+      code = typeof body.code === 'string' ? body.code : ''
+    } catch { /* generic fallback */ }
+    // Only expose stable, documented provider codes; never error bodies or credentials.
+    const safeCode = /^[A-Z][A-Z0-9_]{2,64}$/.test(code) ? code : 'GATEWAY_ERROR'
+    throw new Error(`MISTICPAY_${safeCode}_HTTP_${response.status}`)
+  }
   return response.json()
 }
 
@@ -145,4 +165,4 @@ export async function createMisticPayPayment(params: CreateMisticPayPaymentParam
 export async function getMisticPayPaymentStatus(transactionId: string): Promise<MisticPayStatusResponse> {
   return normalizeMisticPayStatus(await post('/transactions/check', { transactionId }))
 }
-export const isMisticPayConfigured = () => Boolean(process.env.MISTICPAY_CLIENT_ID && process.env.MISTICPAY_CLIENT_SECRET)
+export const isMisticPayConfigured = () => misticPayCredentials().ready
