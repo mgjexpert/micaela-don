@@ -18,8 +18,7 @@ export default async function PackPage({ params }: PageProps) {
     day: 'numeric', month: 'long', year: 'numeric', timeZone: 'UTC',
   }).format(pack.expiresAt)
   // Share the public campaign link, never the private delivery token.
-  const publicCampaign = getCanonicalAppBaseUrl()
-    + (pack.campaignSlug === 'micaela' ? '/' : '/' + encodeURIComponent(pack.campaignSlug))
+  const publicCampaign = getCanonicalAppBaseUrl() + '/' + encodeURIComponent(pack.campaignSlug)
   return (
     <main className="min-h-screen bg-rose-50/40 px-4 py-10 text-stone-900 sm:py-16">
       <div className="mx-auto max-w-3xl overflow-hidden rounded-3xl border border-rose-100 bg-white shadow-xl">
@@ -49,6 +48,19 @@ export default async function PackPage({ params }: PageProps) {
                 <span className="mt-4 inline-block text-sm font-semibold text-rose-800">Descarregar texto</span>
               </a>
             </div>
+          </section>
+          <section className="rounded-2xl border border-rose-200 bg-rose-50 p-5">
+            <h2 className="font-serif text-2xl font-semibold">A sua lembrança das duas amigas</h2>
+            <p className="mt-2 text-sm text-stone-700">{pack.giftDescription}.</p>
+            {pack.giftUrl ? (
+              <a href={pack.giftUrl} target="_blank" rel="noopener noreferrer"
+                className="mt-4 inline-flex rounded-xl bg-rose-700 px-5 py-3 font-semibold text-white hover:bg-rose-800">
+                Abrir pasta privada da lembrança
+              </a>
+            ) : (
+              <p className="mt-3 text-sm text-stone-600">A equipa está a organizar esta seleção. O acesso ao conteúdo será disponibilizado após a configuração da pasta correspondente.</p>
+            )}
+            <p className="mt-3 text-xs text-stone-600">Não partilhe esta ligação com terceiros. Os ficheiros externos seguem as permissões da pasta do Google Drive.</p>
           </section>
           {pack.materials.length > 0 && (
             <section>
