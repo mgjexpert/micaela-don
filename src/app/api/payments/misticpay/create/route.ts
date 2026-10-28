@@ -16,6 +16,7 @@ const schema = z.object({
   currency: z.enum(['BRL']).default('BRL'),
   customerEmail: z.string().trim().email().max(160).optional().or(z.literal('')),
   customerName: z.string().trim().max(120),
+  customerWhatsapp: z.string().trim().max(40).optional(),
   customerCpf: z.string().trim().min(11).max(14),
   description: z.string().trim().max(200).optional(),
 })
@@ -90,6 +91,7 @@ export async function POST(req: NextRequest) {
       status: 'pending',
       customerEmail: d.customerEmail || null,
       customerName: d.customerName,
+      customerPhone: d.customerWhatsapp ?? null,
       metadata: JSON.stringify({ provider: 'misticpay', method: 'pix_automatic' }),
     },
   })
