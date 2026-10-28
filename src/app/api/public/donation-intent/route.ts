@@ -23,7 +23,7 @@ const schema = z.object({
   /// Amount in MINOR units (cents). This is the canonical value — validated server-side.
   amountMinor: z.number().int().nonnegative(),
   donorName: z.string().trim().min(1).max(120),
-  donorEmail: z.string().trim().email().max(160),
+  donorEmail: z.string().trim().email().max(160).optional().or(z.literal('')),
   donorWhatsapp: z.string().trim().max(40).optional().or(z.literal('')),
   donorCountry: z.string().trim().length(2).optional(), // ISO code PT, BR, ...
   paymentMethod: z.enum(['mbway', 'pix_automatic', 'pix_manual', 'bank_transfer']),
@@ -109,7 +109,7 @@ export async function POST(req: NextRequest) {
         amount: d.amountMinor / 100,
         amountMinor: d.amountMinor,
         donorName: d.donorName,
-        donorEmail: d.donorEmail,
+        donorEmail: d.donorEmail || null,
         donorWhatsapp: d.donorWhatsapp || null,
         donorCountry: d.donorCountry || null,
         paymentMethod: d.paymentMethod,
@@ -123,7 +123,7 @@ export async function POST(req: NextRequest) {
       await tx.consentRecord.createMany({
         data: d.consentChannels.map(channel => ({
           campaignId: d.campaignId,
-          donorEmail: d.donorEmail,
+          donorEmail: d.donorEmail || null,
           donorName: d.donorName,
           channel,
           consent: true,
