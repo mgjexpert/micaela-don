@@ -41,7 +41,8 @@ export type CreateSessionParams = {
   amount: number
   currency: string
   campaignName: string
-  customerEmail: string
+  customerEmail?: string
+  embedded?: boolean
   returnUrl: string
   cancelUrl: string
   metadata?: Record<string, string>
@@ -53,14 +54,15 @@ export type CreateSessionParams = {
  */
 export async function createCheckoutSession(params: CreateSessionParams): Promise<{
   sessionId: string
-  checkoutUrl: string
+  checkoutUrl: string | null
+  clientSecret: string | null
 }> {
   const stripe = getStripe()
   const amountInSmallestUnit = Math.round(params.amount * 100)
 
   const session = await stripe.checkout.sessions.create({
     mode: 'payment',
-    ui_mode: 'hosted',
+    ui_mode: params.embedded ? 'embedded' : 'hosted',
     line_items: [
       {
         quantity: 1,
@@ -82,15 +84,18 @@ export async function createCheckoutSession(params: CreateSessionParams): Promis
       campaign_name: params.campaignName,
       ...params.metadata,
     },
-    success_url: params.returnUrl,
-    cancel_url: params.cancelUrl,
+    success_url: params.embedded ? undefined : params.returnUrl,
+    cancel_url: params.embedded ? undefined : params.cancelUrl,
+    return_url: params.embedded ? params.returnUrl : undefined,
     locale: 'pt',
   })
 
-  if (!session.url || !session.url.startsWith('https://')) {
+  if (params.embedded) {
+    if (!session.client_secret) throw new Error('Stripe não devolveu client_secret para Embedded Checkout.')
+  } else if (!session.url || !session.url.startsWith('https://')) {
     throw new Error('Stripe não devolveu um URL de checkout válido.')
   }
-  return { sessionId: session.id, checkoutUrl: session.url }
+  return { sessionId: session.id, checkoutUrl: session.url, clientSecret: session.client_secret }
 }
 
 /**
