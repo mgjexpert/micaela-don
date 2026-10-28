@@ -47,7 +47,18 @@ export async function POST(req: NextRequest) {
     return badRequest(parsed.error.issues[0]?.message ?? 'Dados inválidos.')
   }
   const d = parsed.data
-  if (!process.env.STRIPE_SECRET_KEY || !process.env.STRIPE_WEBHOOK_SECRET) return badRequest('Pagamento em euros indisponível.')
+  if (!process.env.STRIPE_SECRET_KEY) return badRequest('Stripe indisponível: chave secreta não configurada na Vercel.')
+  if (!process.env.STRIPE_WEBHOOK_SECRET) return badRequest('Stripe indisponível: falta o segredo do webhook de confirmação na Vercel.')
+  // Missing, malformed, or mismatched publishable keys should not block donations.
+  // In that case use Stripe's secure hosted Checkout instead of an embedded iframe.
+  const publishableKey = process.env.NEXT_PUBLIC_STRIPE_PUBLISHABLE_KEY
+    || process.env.STRIPE_PUBLISHABLE_KEY
+    || process.env.STRIPE_PUBLIC_KEY
+  const secretMode = process.env.STRIPE_SECRET_KEY.startsWith('sk_live_') ? 'live'
+    : process.env.STRIPE_SECRET_KEY.startsWith('sk_test_') ? 'test' : null
+  const publishableMode = publishableKey?.startsWith('pk_live_') ? 'live'
+    : publishableKey?.startsWith('pk_test_') ? 'test' : null
+  const useEmbedded = d.embedded && Boolean(secretMode && publishableMode && secretMode === publishableMode)
   const ip = clientIp(req)
 
   // 1) Validate campaign
@@ -112,7 +123,7 @@ export async function POST(req: NextRequest) {
       currency: d.currency,
       campaignName: campaign.name,
       customerEmail: d.customerEmail || undefined,
-      embedded: d.embedded,
+      embedded: useEmbedded,
       returnUrl: `${baseUrl}/pagamento/sucesso?ref=${encodeURIComponent(internalReference)}`,
       cancelUrl: `${baseUrl}/pagamento/cancelado?ref=${encodeURIComponent(internalReference)}`,
       metadata: {
@@ -127,7 +138,14 @@ export async function POST(req: NextRequest) {
       data: { externalId: sessionId, status: 'processing' },
     })
 
-    return json({ checkoutUrl, clientSecret, publishableKey: d.embedded ? process.env.NEXT_PUBLIC_STRIPE_PUBLISHABLE_KEY ?? null : null, reference: internalReference, orderId: order.id })
+    return json({
+      checkoutUrl,
+      clientSecret: useEmbedded ? clientSecret : null,
+      publishableKey: useEmbedded ? publishableKey : null,
+      mode: useEmbedded ? 'embedded' : 'hosted',
+      reference: internalReference,
+      orderId: order.id,
+    })
   } catch (e) {
     // Mark order as failed
     await db.paymentOrder.update({
@@ -136,6 +154,6 @@ export async function POST(req: NextRequest) {
     })
     console.error('[stripe] Checkout creation failed:', e instanceof Error ? e.message : 'unknown error')
     // Don't expose credentials or other internal details
-    return badRequest('Não foi possível iniciar o pagamento. Tente novamente.')
+    return badRequest('Não foi possível iniciar o checkout Stripe. Confirme as credenciais, configuração da conta e logs do fornecedor.')
   }
 }
