@@ -20,6 +20,7 @@ type Payment = {
   deliveryStatus: string
   customerName: string | null
   customerEmail: string | null
+  customerPhone: string | null
   createdAt: string
   confirmedAt: string | null
 }
@@ -87,6 +88,25 @@ export function AdminPayments() {
       await load()
     } catch (e) {
       toast.error(e instanceof Error ? e.message : 'Falha na verificação.')
+    } finally {
+      setActing(null)
+    }
+  }
+
+  const copyWhatsApp = async (order: Payment) => {
+    if (acting || !order.customerPhone) return
+    setActing(order.id)
+    try {
+      const data = await apiFetch<{ url: string }>(
+        '/api/admin/payments/' + encodeURIComponent(order.id) + '/pack',
+      )
+      const text = 'Olá! Obrigado por apoiar a Micaela e a Elisa. O seu donativo foi confirmado. A sua lembrança digital está disponível aqui: ' + data.url
+      await navigator.clipboard.writeText(text)
+      toast.success('Mensagem de WhatsApp copiada', {
+        description: 'Confirme o destinatário e envie manualmente ao número registado.',
+      })
+    } catch (e) {
+      toast.error(e instanceof Error ? e.message : 'Ainda não é possível entregar esta lembrança.')
     } finally {
       setActing(null)
     }
@@ -176,6 +196,7 @@ export function AdminPayments() {
                   <span>{order.provider.toUpperCase()}</span>
                   <span>{order.customerName ?? 'Sem nome'}</span>
                   <span className="break-all text-muted-foreground">{order.customerEmail ?? ''}</span>
+                  {order.customerPhone && <span className="text-muted-foreground">WhatsApp: {order.customerPhone}</span>}
                 </div>
                 <div className="mt-2 flex flex-wrap gap-x-5 gap-y-1 text-xs text-muted-foreground">
                   <span>Criado: {formatDate(order.createdAt)}</span>
@@ -191,10 +212,16 @@ export function AdminPayments() {
                     </Button>
                   )}
                   {order.status === 'paid' && (
-                    <Button size="sm" variant="outline" disabled={Boolean(acting)}
-                      onClick={() => void copyPack(order)}>
-                      <Copy className="mr-1.5 h-4 w-4" /> Copiar Pack Media
-                    </Button>
+                    <>
+                      <Button size="sm" variant="outline" disabled={Boolean(acting)}
+                        onClick={() => void copyPack(order)}>
+                        <Copy className="mr-1.5 h-4 w-4" /> Copiar Pack Media
+                      </Button>
+                      {order.customerPhone && <Button size="sm" variant="outline" disabled={Boolean(acting)}
+                        onClick={() => void copyWhatsApp(order)}>
+                        <Copy className="mr-1.5 h-4 w-4" /> Preparar mensagem WA
+                      </Button>}
+                    </>
                   )}
                 </div>
               </div>
