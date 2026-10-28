@@ -17,8 +17,9 @@ const schema = z.object({
   amount: z.number().positive(),
   donationIntentId: z.string().trim().min(8).max(128).optional(),
   currency: z.enum(['EUR']).default('EUR'), // MB WAY is EUR only
-  customerEmail: z.string().trim().email().max(160),
+  customerEmail: z.string().trim().email().max(160).optional().or(z.literal('')),
   customerName: z.string().trim().max(120).optional(),
+  embedded: z.boolean().default(false),
 })
 
 /**
@@ -84,7 +85,7 @@ export async function POST(req: NextRequest) {
       currency: d.currency,
       amount: amountStr,
       status: 'pending',
-      customerEmail: d.customerEmail,
+      customerEmail: d.customerEmail || null,
       customerName: d.customerName ?? null,
       metadata: JSON.stringify({ provider: 'stripe', method: 'mbway' }),
     },
@@ -103,12 +104,13 @@ export async function POST(req: NextRequest) {
   try {
     // Canonical server-configured origin, not the request's Origin header.
     const baseUrl = getCanonicalAppBaseUrl()
-    const { sessionId, checkoutUrl } = await createCheckoutSession({
+    const { sessionId, checkoutUrl, clientSecret } = await createCheckoutSession({
       internalReference,
       amount: d.amount,
       currency: d.currency,
       campaignName: campaign.name,
-      customerEmail: d.customerEmail,
+      customerEmail: d.customerEmail || undefined,
+      embedded: d.embedded,
       returnUrl: `${baseUrl}/pagamento/sucesso?ref=${encodeURIComponent(internalReference)}`,
       cancelUrl: `${baseUrl}/pagamento/cancelado?ref=${encodeURIComponent(internalReference)}`,
       metadata: {
@@ -123,7 +125,7 @@ export async function POST(req: NextRequest) {
       data: { externalId: sessionId, status: 'processing' },
     })
 
-    return json({ checkoutUrl, reference: internalReference, orderId: order.id })
+    return json({ checkoutUrl, clientSecret, publishableKey: d.embedded ? process.env.NEXT_PUBLIC_STRIPE_PUBLISHABLE_KEY ?? null : null, reference: internalReference, orderId: order.id })
   } catch (e) {
     // Mark order as failed
     await db.paymentOrder.update({
