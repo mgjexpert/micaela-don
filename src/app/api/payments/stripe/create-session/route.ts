@@ -19,6 +19,7 @@ const schema = z.object({
   currency: z.enum(['EUR']).default('EUR'), // MB WAY is EUR only
   customerEmail: z.string().trim().email().max(160).optional().or(z.literal('')),
   customerName: z.string().trim().max(120).optional(),
+  customerWhatsapp: z.string().trim().max(40).optional(),
   embedded: z.boolean().default(false),
 })
 
@@ -87,6 +88,7 @@ export async function POST(req: NextRequest) {
       status: 'pending',
       customerEmail: d.customerEmail || null,
       customerName: d.customerName ?? null,
+      customerPhone: d.customerWhatsapp ?? null,
       metadata: JSON.stringify({ provider: 'stripe', method: 'mbway' }),
     },
   })
