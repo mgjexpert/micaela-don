@@ -1,6 +1,7 @@
 import { randomBytes } from 'node:crypto'
 import { db } from '@/lib/db'
 import { isSafePackUrl, isAuthorizedPackAccess } from '@/lib/pack-media/assets'
+import { giftDriveUrl, giftLevel, GIFT_DESCRIPTIONS } from '@/lib/micaela-gifts'
 
 /**
  * Digital delivery layer — server-only.
@@ -146,6 +147,8 @@ export async function ensurePackDeliveryLink(
 export type PackDelivery = {
   campaignName: string
   campaignSlug: string
+  giftUrl: string | null
+  giftDescription: string
   expiresAt: Date
   materials: Array<{ id: string; name: string; category: string; url: string; description: string | null }>
 }
@@ -158,7 +161,7 @@ export async function getPackDelivery(token: string): Promise<PackDelivery | nul
 
   const order = await db.paymentOrder.findUnique({
     where: { id: delivery.orderId },
-    select: { campaignId: true, donationIntentId: true, status: true },
+    select: { campaignId: true, donationIntentId: true, status: true, amount: true, currency: true },
   })
   if (!order?.donationIntentId) return null
 
@@ -189,6 +192,8 @@ export async function getPackDelivery(token: string): Promise<PackDelivery | nul
   return {
     campaignName: campaign.name,
     campaignSlug: campaign.slug,
+    giftUrl: order.campaignId === 'micaela' ? giftDriveUrl(Number(order.amount), order.currency) : null,
+    giftDescription: GIFT_DESCRIPTIONS[giftLevel(Number(order.amount), order.currency) - 1],
     expiresAt: delivery.expiresAt,
     materials: materials.filter(m => isSafePackUrl(m.url)),
   }
