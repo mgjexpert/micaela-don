@@ -149,6 +149,16 @@ export function MicaelaSimpleLanding(props: Props) {
     }
     setLoading(true)
     try {
+      // Do not create an orphan intent if the database, webhook or provider keys
+      // are not ready. This endpoint never creates charges.
+      const readinessResponse = await fetch('/api/public/checkout-readiness', { cache: 'no-store' })
+      if (!readinessResponse.ok) throw new Error('Não foi possível verificar o pagamento. Contacte a equipa.')
+      const readiness = await readinessResponse.json() as {
+        pix: { ready: boolean; reason: string | null }
+        stripe: { ready: boolean; reason: string | null }
+      }
+      const current = currency === 'BRL' ? readiness.pix : readiness.stripe
+      if (!current?.ready) throw new Error(current?.reason || 'Este meio de pagamento está temporariamente indisponível.')
       const method = currency === 'BRL' ? 'pix_automatic' : 'mbway'
       const intentResponse = await fetch('/api/public/donation-intent', {
         method: 'POST', headers: { 'Content-Type': 'application/json' },
