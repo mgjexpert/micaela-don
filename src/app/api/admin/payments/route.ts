@@ -40,6 +40,7 @@ export async function GET(req: NextRequest) {
       status: true,
       externalId: true,
       customerEmail: true,
+      customerPhone: true,
       customerName: true,
       deliveryStatus: true,
       createdAt: true,
